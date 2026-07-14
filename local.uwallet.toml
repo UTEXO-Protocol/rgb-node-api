@@ -1,0 +1,26 @@
+## rgb-node-api config — `local` profile (full regtest stack on localhost).
+
+[api]
+cors_domain = "*"
+listen_address = "0.0.0.0"
+port = 34000
+enable_cors = true
+
+[wallet]
+data_dir = ".doomws/rgb"
+
+network = "Regtest"
+
+btc_rpc_address = "127.0.0.1:18443"
+btc_rpc_password = "dev"
+btc_rpc_user = "dev"
+
+indexer_address = "tcp://127.0.0.1:50001"
+proxy_address =  [
+   "rpc://127.0.0.1:3000/json-rpc"
+]
+
+# This service holds no keys and never signs. Watch-only wallets are registered
+# at runtime via POST /wallet/register (xpub-van / xpub-col / master-fingerprint
+# headers); signing happens client-side and signed PSBTs are submitted to the
+# *-end endpoints.

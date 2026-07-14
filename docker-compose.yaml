@@ -1,0 +1,39 @@
+services:
+  bitcoind:
+    image: bitcoin/bitcoin:30-alpine
+    environment:
+      BITCOIN_DATA: /opt/bitcoind-data/
+    ports:
+      - "127.0.0.1:18443:18443"
+      - "127.0.0.1:18444:18444"
+    command:
+      -regtest
+      -txindex
+      -server
+      -rpcuser=dev
+      -rpcpassword=dev
+      -rpcbind=0.0.0.0
+      -rpcallowip=0.0.0.0/0
+
+  electrs:
+    image: registry.gitlab.com/hashbeam/docker/electrs:0.10.9
+    environment:
+      BTCHOST: "bitcoind"
+      BTCRPCPORT: "18443"
+      BTCP2PPORT: "18444"
+      BTCUSER: "dev"
+      BTCPASS: "dev"
+    ports:
+      - "127.0.0.1:50001:50001"
+    restart: always
+    depends_on:
+      - bitcoind
+
+  rgb_proxy:
+    image: ghcr.io/utexo-protocol/rgb-proxy-ns:latest
+    environment:
+      RUST_LOG: info
+      RUST_BACKTRACE: 1
+    ports:
+      - "127.0.0.1:3000:3000"
+    restart: always

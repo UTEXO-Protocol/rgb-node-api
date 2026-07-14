@@ -1,0 +1,36 @@
+[package]
+edition = "2024"
+name = "rgb-node-api"
+version = "0.1.0"
+resolver = "3"
+default-run = "rgb-node-api"
+
+[dependencies]
+actix = "0.13.5"
+actix-cors = "0.7.0"
+actix-files = "0.6.10"
+actix-web = "4.5.1"
+actix-web-prom = { version = "0.9.0", features = ["process"] }
+anyhow = "1.0.81"
+bigdecimal = { version = "0.4.5", features = ["serde", "serde-json"] }
+clap = { version = "4.5.4", features = ["derive"] }
+env_logger = "0.11.3"
+hex = "0.4.3"
+log = { version = "0.4.21", features = ["kv", "std", "serde", "kv_serde"] }
+mime_guess = "2.0.4"
+num_enum = "0.7.3"
+prometheus = { version = "0.13.4", features = ["process"] }
+rgb-lib = { git = "ssh://git@github.com/UTEXO-Protocol/rgb-lib.git", branch = "dev", default-features = false, features = ["electrum", "esplora"] }
+rust-embed = { version = "8.3.0", features = [
+  "actix",
+  "actix-web",
+  "mime-guess",
+] }
+sentry-actix = "0.34.0"
+serde = { version = "1.0.197", features = ["derive"] }
+serde_valid = { version = "1.0.5", features = ["toml"] }
+tokio = { version = "1.43.0", default-features = false, features = ["full"] }
+tokio-util = { version = "0.7.10", default-features = false, features = [
+  "full",
+] }
+toml = "0.9.6"

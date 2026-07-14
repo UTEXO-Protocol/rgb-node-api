@@ -1,0 +1,1070 @@
+openapi: 3.1.0
+info:
+  title: RGB Node API
+  description: API for managing RGB assets, BTC balances, and transactions.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:34000/
+    description: Local Development
+  - url: http://{custom_ip}:{port}/
+    description: Custom Remote Node
+    variables:
+      custom_ip:
+        default: "127.0.0.1"
+      port:
+        default: "34000"
+
+paths:
+  /healthcheck:
+    get:
+      summary: Healthcheck
+      tags:
+        - system
+      responses:
+        '200':
+          description: Service is running
+
+  /version:
+    get:
+      summary: Version
+      tags:
+        - system
+      responses:
+        '200':
+          description: App version info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  app:
+                    type: string
+                  version:
+                    type: string
+                  build:
+                    type: string
+                  commit:
+                    type: string
+
+# =============== SDK API PATH ==========================:
+
+  /wallet/register:
+    post:
+      summary: Register Wallet
+      operationId: register_wallet_wallet_register_post
+      tags:
+        - rgb-sdk-api
+      parameters:
+        - $ref: '#/components/parameters/XpubVan'
+        - $ref: '#/components/parameters/XpubCol'
+        - $ref: '#/components/parameters/MasterFingerprint'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterModel'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+
+  /wallet/listunspents:
+    post:
+      summary: List Unspents
+      operationId: list_unspents_wallet_listunspents_post
+      tags:
+        - rgb-sdk-api
+      parameters:
+        - $ref: '#/components/parameters/XpubVan'
+        - $ref: '#/components/parameters/XpubCol'
+        - $ref: '#/components/parameters/MasterFingerprint'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Unspent'
+                title: Response List Unspents Wallet Listunspents Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /wallet/createutxosbegin:
+    post:
+      summary: Create Utxos Begin
+      operationId: create_utxos_begin_wallet_createutxosbegin_post
+      tags:
+        - rgb-sdk-api
+      parameters:
+        - $ref: '#/components/parameters/XpubVan'
+        - $ref: '#/components/parameters/XpubCol'
+        - $ref: '#/components/parameters/MasterFingerprint'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUtxosBegin'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: string
+                title: Response Create Utxos Begin Wallet Createutxosbegin Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /wallet/createutxosend:
+    post:
+      summary: Create Utxos End
+      operationId: create_utxos_end_wallet_createutxosend_post
+      tags:
+        - rgb-sdk-api
+      parameters:
+        - $ref: '#/components/parameters/XpubVan'
+        - $ref: '#/components/parameters/XpubCol'
+        - $ref: '#/components/parameters/MasterFingerprint'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUtxosEnd'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: integer
+                title: Response Create Utxos End Wallet Createutxosend Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /wallet/listassets:
+    post:
+      summary: List Assets
+      operationId: list_assets_wallet_listassets_post
+      tags:
+        - rgb-sdk-api
+      parameters:
+        - $ref: '#/components/parameters/XpubVan'
+        - $ref: '#/components/parameters/XpubCol'
+        - $ref: '#/components/parameters/MasterFingerprint'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AssetSchema'
+                title: Response List Assets Wallet Listassets Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /wallet/btcbalance:
+    post:
+      summary: Get Btc Balance
+      operationId: get_btc_balance_wallet_btcbalance_post
+      tags:
+        - rgb-sdk-api
+      parameters:
+        - $ref: '#/components/parameters/XpubVan'
+        - $ref: '#/components/parameters/XpubCol'
+        - $ref: '#/components/parameters/MasterFingerprint'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BtcBalance'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /wallet/address:
+    post:
+      summary: Get Address
+      operationId: get_address_wallet_address_post
+      tags:
+        - rgb-sdk-api
+      parameters:
+        - $ref: '#/components/parameters/XpubVan'
+        - $ref: '#/components/parameters/XpubCol'
+        - $ref: '#/components/parameters/MasterFingerprint'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: string
+                title: Response Get Address Wallet Address Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /wallet/issuenia:
+    post:
+      summary: Issue Asset Nia
+      operationId: issue_asset_nia_wallet_issueassetnia_post
+      tags:
+        - rgb-sdk-api
+      parameters:
+        - $ref: '#/components/parameters/XpubVan'
+        - $ref: '#/components/parameters/XpubCol'
+        - $ref: '#/components/parameters/MasterFingerprint'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueAssetNiaRequestModel'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetNia'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /wallet/assetbalance:
+    post:
+      summary: Get Asset Balance
+      operationId: get_asset_balance_wallet_assetbalance_post
+      tags:
+        - rgb-sdk-api
+      parameters:
+        - $ref: '#/components/parameters/XpubVan'
+        - $ref: '#/components/parameters/XpubCol'
+        - $ref: '#/components/parameters/MasterFingerprint'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetBalanceRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Balance'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /wallet/sendbegin:
+    post:
+      summary: Send Begin
+      operationId: send_begin_wallet_sendbegin_post
+      tags:
+        - rgb-sdk-api
+      parameters:
+        - $ref: '#/components/parameters/XpubVan'
+        - $ref: '#/components/parameters/XpubCol'
+        - $ref: '#/components/parameters/MasterFingerprint'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendAssetBeginRequestModel'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: string
+                title: Response Send Begin Wallet Sendbegin Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /wallet/sendend:
+    post:
+      summary: Send End
+      operationId: send_end_wallet_sendend_post
+      tags:
+        - rgb-sdk-api
+      parameters:
+        - $ref: '#/components/parameters/XpubVan'
+        - $ref: '#/components/parameters/XpubCol'
+        - $ref: '#/components/parameters/MasterFingerprint'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendAssetEndRequestModel'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendResult'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /wallet/blindreceive:
+    post:
+      summary: Generate Invoice
+      operationId: generate_invoice_blindreceive_post
+      tags:
+        - rgb-sdk-api
+      parameters:
+        - $ref: '#/components/parameters/XpubVan'
+        - $ref: '#/components/parameters/XpubCol'
+        - $ref: '#/components/parameters/MasterFingerprint'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RgbInvoiceRequestModel'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReceiveData'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /wallet/failtransfers:
+    post:
+      summary: Failtransfers
+      operationId: failtransfers_wallet_failtransfers_post
+      tags:
+        - rgb-sdk-api
+      parameters:
+        - $ref: '#/components/parameters/XpubVan'
+        - $ref: '#/components/parameters/XpubCol'
+        - $ref: '#/components/parameters/MasterFingerprint'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FailTransferRequestModel'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /wallet/listtransactions:
+    post:
+      summary: List Transaction
+      operationId: list_transaction_wallet_listtransactions_post
+      tags:
+        - rgb-sdk-api
+      parameters:
+        - $ref: '#/components/parameters/XpubVan'
+        - $ref: '#/components/parameters/XpubCol'
+        - $ref: '#/components/parameters/MasterFingerprint'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /wallet/listtransfers:
+    post:
+      summary: List Transfers
+      operationId: list_transfers_wallet_listtransfers_post
+      tags:
+        - rgb-sdk-api
+      parameters:
+        - $ref: '#/components/parameters/XpubVan'
+        - $ref: '#/components/parameters/XpubCol'
+        - $ref: '#/components/parameters/MasterFingerprint'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ListTransfersRequestModel'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Transfer'
+                title: Response List Transfers Wallet Listtransfers Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /wallet/refresh:
+    post:
+      summary: Refresh Wallet
+      operationId: refresh_wallet_wallet_refresh_post
+      tags:
+        - rgb-sdk-api
+      parameters:
+        - $ref: '#/components/parameters/XpubVan'
+        - $ref: '#/components/parameters/XpubCol'
+        - $ref: '#/components/parameters/MasterFingerprint'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /wallet/drop:
+    post:
+      summary: Drop Wallet
+      operationId: drop_wallet_wallet_drop_post
+      tags:
+        - rgb-sdk-api
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+components:
+  parameters:
+    XpubVan:
+      name: xpub-van
+      in: header
+      required: true
+      description: Account-level xPub of the vanilla side of the wallet
+      schema:
+        type: string
+    XpubCol:
+      name: xpub-col
+      in: header
+      required: true
+      description: Account-level xPub of the colored side of the wallet
+      schema:
+        type: string
+    MasterFingerprint:
+      name: master-fingerprint
+      in: header
+      required: true
+      description: Fingerprint of the master xPub (used as wallet ID)
+      schema:
+        type: string
+
+  schemas:
+    AssetBalanceRequest:
+      properties:
+        xpub:
+          type: string
+          title: Xpub
+        assetId:
+          type: string
+          title: Assetid
+      type: object
+      required:
+        - xpub
+        - assetId
+      title: AssetBalanceRequest
+    AssetIface:
+      type: integer
+      enum:
+        - 0
+        - 1
+        - 2
+      title: AssetIface
+    AssetNia:
+      properties:
+        asset_id:
+          type: string
+          title: Asset Id
+        asset_iface:
+          $ref: '#/components/schemas/AssetIface'
+        ticker:
+          type: string
+          title: Ticker
+        name:
+          type: string
+          title: Name
+        details:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Details
+        precision:
+          type: integer
+          title: Precision
+        issued_supply:
+          type: integer
+          title: Issued Supply
+        timestamp:
+          type: integer
+          title: Timestamp
+        added_at:
+          type: integer
+          title: Added At
+        balance:
+          $ref: '#/components/schemas/Balance'
+        media:
+          anyOf:
+            - $ref: '#/components/schemas/Media'
+            - type: 'null'
+      type: object
+      required:
+        - asset_id
+        - asset_iface
+        - ticker
+        - name
+        - details
+        - precision
+        - issued_supply
+        - timestamp
+        - added_at
+        - balance
+        - media
+      title: AssetNia
+    AssetSchema:
+      type: integer
+      enum:
+        - 0
+        - 1
+        - 2
+      title: AssetSchema
+    Balance:
+      properties:
+        settled:
+          type: integer
+          title: Settled
+        future:
+          type: integer
+          title: Future
+        spendable:
+          type: integer
+          title: Spendable
+      type: object
+      required:
+        - settled
+        - future
+        - spendable
+      title: Balance
+    BtcBalance:
+      properties:
+        vanilla:
+          $ref: '#/components/schemas/Balance'
+        colored:
+          $ref: '#/components/schemas/Balance'
+      type: object
+      required:
+        - vanilla
+        - colored
+      title: BtcBalance
+    CreateUtxosBegin:
+      properties:
+        upTo:
+          type: boolean
+          title: Upto
+          default: false
+        num:
+          type: integer
+          title: Num
+          default: 5
+        size:
+          type: integer
+          title: Size
+          default: 1000
+        feeRate:
+          type: integer
+          title: Feerate
+          default: 1
+      type: object
+      title: CreateUtxosBegin
+    CreateUtxosEnd:
+      properties:
+        signedPsbt:
+          type: string
+          title: Signedpsbt
+      type: object
+      required:
+        - signedPsbt
+      title: CreateUtxosEnd
+    FailTransferRequestModel:
+      properties:
+        batch_transfer_idx:
+          type: integer
+          title: Batch Transfer Idx
+        no_asset_only:
+          type: boolean
+          title: No Asset Only
+          default: false
+        skip_sync:
+          type: boolean
+          title: Skip Sync
+          default: false
+      type: object
+      required:
+        - batch_transfer_idx
+      title: FailTransferRequestModel
+      description: Response model for fail transfer
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    IssueAssetNiaRequestModel:
+      properties:
+        amounts:
+          items:
+            type: integer
+          type: array
+          title: Amounts
+        ticker:
+          type: string
+          title: Ticker
+        name:
+          type: string
+          title: Name
+        precision:
+          type: integer
+          title: Precision
+          default: 0
+      type: object
+      required:
+        - amounts
+        - ticker
+        - name
+      title: IssueAssetNiaRequestModel
+      description: Request model for issuing assets nia.
+    ListTransfersRequestModel:
+      properties:
+        asset_id:
+          type: string
+          title: Asset Id
+      type: object
+      required:
+        - asset_id
+      title: ListTransfersRequestModel
+      description: Request model for listing asset transfers.
+    Media:
+      properties:
+        file_path:
+          type: string
+          title: File Path
+        digest:
+          type: string
+          title: Digest
+        hex:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Hex
+        mime:
+          type: string
+          title: Mime
+      type: object
+      required:
+        - file_path
+        - digest
+        - mime
+      title: Media
+      description: Model for list asset
+    Outpoint:
+      properties:
+        txid:
+          type: string
+          title: Txid
+        vout:
+          type: integer
+          title: Vout
+      type: object
+      required:
+        - txid
+        - vout
+      title: Outpoint
+    ReceiveData:
+      properties:
+        invoice:
+          type: string
+          title: Invoice
+        recipient_id:
+          type: string
+          title: Recipient Id
+        expiration_timestamp:
+          anyOf:
+            - type: integer
+            - type: 'null'
+          title: Expiration Timestamp
+        batch_transfer_idx:
+          type: integer
+          title: Batch Transfer Idx
+      type: object
+      required:
+        - invoice
+        - recipient_id
+        - expiration_timestamp
+        - batch_transfer_idx
+      title: ReceiveData
+    Recipient:
+      properties:
+        recipient_id:
+          type: string
+          title: Recipient Id
+        witness_data:
+          anyOf:
+            - $ref: '#/components/schemas/WitnessData'
+            - type: 'null'
+        amount:
+          type: integer
+          title: Amount
+        transport_endpoints:
+          items:
+            type: string
+          type: array
+          title: Transport Endpoints
+      type: object
+      required:
+        - recipient_id
+        - amount
+        - transport_endpoints
+      title: Recipient
+      description: Recipient model for asset transfer.
+    RegisterModel:
+      properties:
+        address:
+          type: string
+          title: Address
+        btc_balance:
+          $ref: '#/components/schemas/BtcBalance'
+      type: object
+      required:
+        - address
+        - btc_balance
+      title: RegisterModel
+    RgbAllocation:
+      properties:
+        asset_id:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Asset Id
+        amount:
+          type: integer
+          title: Amount
+        settled:
+          type: boolean
+          title: Settled
+      type: object
+      required:
+        - asset_id
+        - amount
+        - settled
+      title: RgbAllocation
+    RgbInvoiceRequestModel:
+      properties:
+        min_confirmations:
+          type: integer
+          title: Min Confirmations
+          default: 1
+        asset_id:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Asset Id
+        amount:
+          anyOf:
+            - type: integer
+            - type: 'null'
+          title: Amount
+        duration_seconds:
+          type: integer
+          title: Duration Seconds
+          default: 3600
+      type: object
+      title: RgbInvoiceRequestModel
+      description: Request model for RGB invoices.
+    SendAssetBeginRequestModel:
+      properties:
+        recipient_map:
+          additionalProperties:
+            items:
+              $ref: '#/components/schemas/Recipient'
+            type: array
+          type: object
+          title: Recipient Map
+        donation:
+          type: boolean
+          title: Donation
+          default: false
+        fee_rate:
+          type: integer
+          title: Fee Rate
+          default: 1
+        min_confirmations:
+          type: integer
+          title: Min Confirmations
+          default: 1
+      type: object
+      required:
+        - recipient_map
+      title: SendAssetBeginRequestModel
+    SendAssetEndRequestModel:
+      properties:
+        signed_psbt:
+          type: string
+          title: Signed Psbt
+      type: object
+      required:
+        - signed_psbt
+      title: SendAssetEndRequestModel
+    SendResult:
+      properties:
+        txid:
+          type: string
+          title: Txid
+        batch_transfer_idx:
+          type: integer
+          title: Batch Transfer Idx
+      type: object
+      required:
+        - txid
+        - batch_transfer_idx
+      title: SendResult
+    Transfer:
+      properties:
+        idx:
+          type: integer
+          title: Idx
+        batch_transfer_idx:
+          type: integer
+          title: Batch Transfer Idx
+        created_at:
+          type: integer
+          title: Created At
+        updated_at:
+          type: integer
+          title: Updated At
+        status:
+          $ref: '#/components/schemas/TransferStatus'
+        amount:
+          type: integer
+          title: Amount
+        kind:
+          $ref: '#/components/schemas/TransferKind'
+        txid:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Txid
+        recipient_id:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Recipient Id
+        receive_utxo:
+          anyOf:
+            - $ref: '#/components/schemas/Outpoint'
+            - type: 'null'
+        change_utxo:
+          anyOf:
+            - $ref: '#/components/schemas/Outpoint'
+            - type: 'null'
+        expiration:
+          anyOf:
+            - type: integer
+            - type: 'null'
+          title: Expiration
+        transport_endpoints:
+          items:
+            $ref: '#/components/schemas/TransferTransportEndpoint'
+          type: array
+          title: Transport Endpoints
+      type: object
+      required:
+        - idx
+        - batch_transfer_idx
+        - created_at
+        - updated_at
+        - status
+        - amount
+        - kind
+        - txid
+        - recipient_id
+        - receive_utxo
+        - change_utxo
+        - expiration
+        - transport_endpoints
+      title: Transfer
+      description: Model representing a transfer.
+    TransferKind:
+      type: integer
+      enum:
+        - 0
+        - 1
+        - 2
+        - 3
+      title: TransferKind
+    TransferStatus:
+      type: integer
+      enum:
+        - 0
+        - 1
+        - 2
+        - 3
+      title: TransferStatus
+    TransferTransportEndpoint:
+      properties:
+        endpoint:
+          type: string
+          title: Endpoint
+        transport_type:
+          $ref: '#/components/schemas/TransportType'
+        used:
+          type: boolean
+          title: Used
+      type: object
+      required:
+        - endpoint
+        - transport_type
+        - used
+      title: TransferTransportEndpoint
+    TransportType:
+      type: integer
+      enum:
+        - 0
+      title: TransportType
+    Unspent:
+      properties:
+        utxo:
+          $ref: '#/components/schemas/Utxo'
+        rgb_allocations:
+          $ref: '#/components/schemas/RgbAllocation'
+      type: object
+      required:
+        - utxo
+        - rgb_allocations
+      title: Unspent
+    Utxo:
+      properties:
+        outpoint:
+          $ref: '#/components/schemas/Outpoint'
+        btc_amount:
+          type: integer
+          title: Btc Amount
+        colorable:
+          type: boolean
+          title: Colorable
+        exists:
+          type: boolean
+          title: Exists
+      type: object
+      required:
+        - outpoint
+        - btc_amount
+        - colorable
+        - exists
+      title: Utxo
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+              - type: string
+              - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+      type: object
+      required:
+        - loc
+        - msg
+        - type
+      title: ValidationError
+    WitnessData:
+      properties:
+        amount_sat:
+          type: integer
+          title: Amount Sat
+        blinding:
+          anyOf:
+            - type: integer
+            - type: 'null'
+          title: Blinding
+      type: object
+      required:
+        - amount_sat
+        - blinding
+      title: WitnessData

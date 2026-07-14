@@ -1,0 +1,6 @@
+/target
+*.log
+
+# local wallet/regtest data
+/.doomws
+/rgb-data
