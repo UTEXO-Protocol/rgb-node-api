@@ -239,11 +239,13 @@ impl WalletCtx {
         &self,
         batch_transfer_idx: Option<i32>,
         no_asset_only: bool,
+        skip_sync: bool,
     ) -> Result<bool, rgb_lib::Error> {
         let (resp, recv) = oneshot::channel();
         let cmd = WalletCmd::FailTransfer {
             batch_transfer_idx,
             no_asset_only,
+            skip_sync,
             resp,
         };
         self.send_cmd(cmd, recv).await
@@ -279,6 +281,18 @@ impl WalletCtx {
             psbt: signed_psbt,
             resp,
         };
+        self.send_cmd(cmd, recv).await
+    }
+
+    pub async fn refresh_wallet(&self) -> Result<(), rgb_lib::Error> {
+        let (resp, recv) = oneshot::channel();
+        let cmd = WalletCmd::RefreshWallet { resp };
+        self.send_cmd(cmd, recv).await
+    }
+
+    pub async fn drop_wallet(&self) -> Result<(), rgb_lib::Error> {
+        let (resp, recv) = oneshot::channel();
+        let cmd = WalletCmd::DropWallet { resp };
         self.send_cmd(cmd, recv).await
     }
 

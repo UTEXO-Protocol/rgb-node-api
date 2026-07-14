@@ -15,6 +15,12 @@ type ResultChan<T> = oneshot::Sender<RResult<T>>;
 
 pub(crate) enum WalletCmd {
     Refresh {},
+    RefreshWallet {
+        resp: ResultChan<()>,
+    },
+    DropWallet {
+        resp: ResultChan<()>,
+    },
     Stop {
         resp: ResultChan<()>,
     },
@@ -37,6 +43,7 @@ pub(crate) enum WalletCmd {
     FailTransfer {
         batch_transfer_idx: Option<i32>,
         no_asset_only: bool,
+        skip_sync: bool,
         resp: ResultChan<bool>,
     },
     TransfersByAsset {
@@ -108,6 +115,8 @@ impl std::fmt::Display for WalletCmd {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let name = match self {
             WalletCmd::Refresh { .. } => "Refresh",
+            WalletCmd::RefreshWallet { .. } => "RefreshWallet",
+            WalletCmd::DropWallet { .. } => "DropWallet",
             WalletCmd::Stop { .. } => "Stop",
             WalletCmd::WalletInfo { .. } => "WalletInfo",
             WalletCmd::Backup { .. } => "Backup",
@@ -225,6 +234,14 @@ impl WalletThread {
                     let _ = resp.send(Ok(info));
                 }
 
+                WalletCmd::DropWallet { resp } => {
+                    if let Some(id) = &ido {
+                        multi_wstate.write().unwrap().remove(id);
+                        log::info!("dropped wallet: wid={id}");
+                    }
+                    let _ = resp.send(Ok(()));
+                }
+
                 WalletCmd::Stop { resp } => {
                     multi_wstate.write().unwrap().clear();
                     let _ = resp.send(Ok(()));
@@ -310,13 +327,14 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
         WalletCmd::FailTransfer {
             batch_transfer_idx,
             no_asset_only,
+            skip_sync,
             resp,
         } => {
             let mut w = wallet_state.lock().unwrap();
             let wo = w.wallet_online;
             match w
                 .wallet
-                .fail_transfers(wo, batch_transfer_idx, no_asset_only, false)
+                .fail_transfers(wo, batch_transfer_idx, no_asset_only, skip_sync)
             {
                 Ok(val) => resp.send(Ok(val)).is_ok(),
                 Err(err) => {
@@ -441,9 +459,13 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
             }
         }
         WalletCmd::Receive { req, resp } => {
+            let assignment = match req.amount {
+                Some(amount) => rgb_lib::Assignment::Fungible(amount),
+                None => rgb_lib::Assignment::Any,
+            };
             match wallet_state.lock().unwrap().blind_receive_token(
                 req.asset_id,
-                rgb_lib::Assignment::Fungible(req.amount),
+                assignment,
                 req.duration_seconds,
                 req.min_confirmations,
             ) {
@@ -485,11 +507,18 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
             }
         }
         WalletCmd::SendBegin { req, resp } => {
+            let recipient_map: std::collections::HashMap<String, Vec<wallet::Recipient>> = req
+                .recipient_map
+                .into_iter()
+                .map(|(asset_id, recipients)| {
+                    (asset_id, recipients.into_iter().map(Into::into).collect())
+                })
+                .collect();
             let mut w = wallet_state.lock().unwrap();
             let wo = w.wallet_online;
             match w.wallet.send_begin(
                 wo,
-                req.recipient_map,
+                recipient_map,
                 req.donation,
                 req.fee_rate,
                 req.min_confirmations,
@@ -549,11 +578,22 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
             let w = wallet_state.lock().unwrap();
             match w
                 .wallet
-                .issue_asset_nia(req.ticker, req.name, req.precision, vec![req.premine])
+                .issue_asset_nia(req.ticker, req.name, req.precision, req.amounts)
             {
                 Ok(val) => resp.send(Ok(val)).is_ok(),
                 Err(err) => {
                     log::error!("issue token: wid={id} error={:?}", err);
+                    resp.send(Err(err)).is_ok()
+                }
+            }
+        }
+        WalletCmd::RefreshWallet { resp } => {
+            let mut w = wallet_state.lock().unwrap();
+            let wo = w.wallet_online;
+            match w.wallet.refresh(wo, None, Vec::new(), false) {
+                Ok(_) => resp.send(Ok(())).is_ok(),
+                Err(err) => {
+                    log::error!("refresh wallet: wid={id} error={:?}", err);
                     resp.send(Err(err)).is_ok()
                 }
             }

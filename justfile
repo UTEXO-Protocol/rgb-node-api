@@ -17,6 +17,12 @@ check:
     cargo check --all-targets
     cargo clippy --fix --all-targets -- -D warnings
 
+# Non-mutating lint used by CI (see .github/workflows/ci.yaml).
+ci-lint:
+    cargo fmt --all --check
+    cargo check --all-targets
+    cargo clippy --all-targets -- -D warnings
+
 fmt-cargo:
     taplo fmt -c .taplo.conf
 

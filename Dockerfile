@@ -9,7 +9,11 @@ RUN apt-get update && apt-get install -y build-essential \
         git \
         pkgconf
 
-RUN cargo build --release --bin rgb-node-api \
+# rgb-lib is declared as an ssh:// git dependency but the repo is public,
+# so rewrite to anonymous HTTPS to fetch it without any SSH key/secret.
+RUN git config --global url."https://github.com/".insteadOf "ssh://git@github.com/" && \
+    CARGO_NET_GIT_FETCH_WITH_CLI=true \
+    cargo build --release --bin rgb-node-api \
     && mkdir bins \
     && cp ./target/release/rgb-node-api ./bins/
 

@@ -80,15 +80,34 @@ pub struct AssetId {
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AssetBalanceReq {
+    pub asset_id: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Psbt {
     pub signed_psbt: String,
 }
 
 #[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
+pub struct SendAssetEndReq {
+    pub signed_psbt: String,
+}
+
+#[derive(serde::Deserialize)]
 pub struct FailTransfer {
     pub batch_transfer_idx: Option<i32>,
+    #[serde(default)]
     pub no_asset_only: bool,
+    #[serde(default)]
+    pub skip_sync: bool,
+}
+
+#[derive(serde::Serialize)]
+pub struct SendResult {
+    pub txid: String,
+    pub batch_transfer_idx: i32,
 }
 
 pub async fn register(
@@ -128,7 +147,7 @@ pub async fn btc_balance(
 pub async fn asset_balance(
     ctx: Data<WalletCtx>,
     wallet_key: XWalletKey,
-    req: Json<AssetId>,
+    req: Json<AssetBalanceReq>,
 ) -> Result<Json<rgb_lib::wallet::Balance>, ApiError> {
     let ctx = derive_wctx(&ctx, wallet_key).await?;
 
@@ -188,7 +207,7 @@ pub async fn fail_transfers(
 ) -> Result<Json<bool>, ApiError> {
     let ctx = derive_wctx(&ctx, wallet_key).await?;
     let list = ctx
-        .fail_transfer(req.batch_transfer_idx, req.no_asset_only)
+        .fail_transfer(req.batch_transfer_idx, req.no_asset_only, req.skip_sync)
         .await
         .map_err(map_rgb_error)?;
     Ok(Json(list))
@@ -245,14 +264,17 @@ pub async fn send_begin(
 pub async fn send_end(
     ctx: Data<WalletCtx>,
     wallet_key: XWalletKey,
-    req: Json<Psbt>,
-) -> Result<Json<rgb_lib::wallet::OperationResult>, ApiError> {
+    req: Json<SendAssetEndReq>,
+) -> Result<Json<SendResult>, ApiError> {
     let ctx = derive_wctx(&ctx, wallet_key).await?;
     let res = ctx
         .send_end(req.signed_psbt.clone())
         .await
         .map_err(map_rgb_error)?;
-    Ok(Json(res))
+    Ok(Json(SendResult {
+        txid: res.txid,
+        batch_transfer_idx: res.batch_transfer_idx,
+    }))
 }
 
 pub async fn blind_receive(
@@ -266,13 +288,16 @@ pub async fn blind_receive(
 }
 
 pub async fn refresh(ctx: Data<WalletCtx>, wallet_key: XWalletKey) -> Result<Json<()>, ApiError> {
-    let _ = derive_wctx(&ctx, wallet_key).await?;
-
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    ctx.refresh_wallet().await.map_err(map_rgb_error)?;
     Ok(Json(()))
 }
 
 pub async fn drop(ctx: Data<WalletCtx>, wallet_key: XWalletKey) -> Result<Json<()>, ApiError> {
-    let _ = derive_wctx(&ctx, wallet_key).await?;
-    // FIXME
+    // Remove the wallet from memory without re-registering it first.
+    ctx.with_id(wallet_key.master_fingerprint)
+        .drop_wallet()
+        .await
+        .map_err(map_rgb_error)?;
     Ok(Json(()))
 }

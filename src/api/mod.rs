@@ -25,7 +25,7 @@ impl WalletSrv {
 
 impl ApiService for WalletSrv {
     fn name(&self) -> &'static str {
-        "uwallet"
+        "rgbnodeapi"
     }
 
     fn service(&self) -> Scope {
@@ -35,6 +35,8 @@ impl ApiService for WalletSrv {
             .service(resource("/version").route(get().to(version)))
             .service(resource("/_swagger").route(get().to(swagger::ui)))
             .service(resource("/_swagger/swagger.yaml").route(get().to(swagger::spec)))
+            // remove this in future
+            .service(resource("/blindreceive").route(post().to(node_api::blind_receive)))
             .service(
                 scope("/wallet")
                     .service(resource("/register").route(post().to(node_api::register)))
@@ -49,7 +51,7 @@ impl ApiService for WalletSrv {
                     .service(resource("/listassets").route(post().to(node_api::list_assets)))
                     .service(resource("/btcbalance").route(post().to(node_api::btc_balance)))
                     .service(resource("/address").route(post().to(node_api::address)))
-                    .service(resource("/issuenia").route(post().to(node_api::issue_nia)))
+                    .service(resource("/issueassetnia").route(post().to(node_api::issue_nia)))
                     .service(resource("/assetbalance").route(post().to(node_api::asset_balance)))
                     .service(resource("/sendbegin").route(post().to(node_api::send_begin)))
                     .service(resource("/sendend").route(post().to(node_api::send_end)))

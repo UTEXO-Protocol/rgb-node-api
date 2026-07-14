@@ -1,64 +1,32 @@
 openapi: 3.1.0
 info:
-  title: RGB Node API
-  description: API for managing RGB assets, BTC balances, and transactions.
+  title: RGB Wallet API
+  description: API documentation for RGB wallet management and asset transfers
   version: 1.0.0
-
-servers:
-  - url: http://localhost:34000/
-    description: Local Development
-  - url: http://{custom_ip}:{port}/
-    description: Custom Remote Node
-    variables:
-      custom_ip:
-        default: "127.0.0.1"
-      port:
-        default: "34000"
-
 paths:
-  /healthcheck:
-    get:
-      summary: Healthcheck
-      tags:
-        - system
-      responses:
-        '200':
-          description: Service is running
-
-  /version:
-    get:
-      summary: Version
-      tags:
-        - system
-      responses:
-        '200':
-          description: App version info
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  app:
-                    type: string
-                  version:
-                    type: string
-                  build:
-                    type: string
-                  commit:
-                    type: string
-
-# =============== SDK API PATH ==========================:
-
   /wallet/register:
     post:
       summary: Register Wallet
       operationId: register_wallet_wallet_register_post
-      tags:
-        - rgb-sdk-api
       parameters:
-        - $ref: '#/components/parameters/XpubVan'
-        - $ref: '#/components/parameters/XpubCol'
-        - $ref: '#/components/parameters/MasterFingerprint'
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
       responses:
         '200':
           description: Successful Response
@@ -72,17 +40,29 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-
   /wallet/listunspents:
     post:
       summary: List Unspents
       operationId: list_unspents_wallet_listunspents_post
-      tags:
-        - rgb-sdk-api
       parameters:
-        - $ref: '#/components/parameters/XpubVan'
-        - $ref: '#/components/parameters/XpubCol'
-        - $ref: '#/components/parameters/MasterFingerprint'
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
       responses:
         '200':
           description: Successful Response
@@ -103,12 +83,25 @@ paths:
     post:
       summary: Create Utxos Begin
       operationId: create_utxos_begin_wallet_createutxosbegin_post
-      tags:
-        - rgb-sdk-api
       parameters:
-        - $ref: '#/components/parameters/XpubVan'
-        - $ref: '#/components/parameters/XpubCol'
-        - $ref: '#/components/parameters/MasterFingerprint'
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
       requestBody:
         required: true
         content:
@@ -133,12 +126,25 @@ paths:
     post:
       summary: Create Utxos End
       operationId: create_utxos_end_wallet_createutxosend_post
-      tags:
-        - rgb-sdk-api
       parameters:
-        - $ref: '#/components/parameters/XpubVan'
-        - $ref: '#/components/parameters/XpubCol'
-        - $ref: '#/components/parameters/MasterFingerprint'
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
       requestBody:
         required: true
         content:
@@ -163,12 +169,25 @@ paths:
     post:
       summary: List Assets
       operationId: list_assets_wallet_listassets_post
-      tags:
-        - rgb-sdk-api
       parameters:
-        - $ref: '#/components/parameters/XpubVan'
-        - $ref: '#/components/parameters/XpubCol'
-        - $ref: '#/components/parameters/MasterFingerprint'
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
       responses:
         '200':
           description: Successful Response
@@ -189,12 +208,25 @@ paths:
     post:
       summary: Get Btc Balance
       operationId: get_btc_balance_wallet_btcbalance_post
-      tags:
-        - rgb-sdk-api
       parameters:
-        - $ref: '#/components/parameters/XpubVan'
-        - $ref: '#/components/parameters/XpubCol'
-        - $ref: '#/components/parameters/MasterFingerprint'
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
       responses:
         '200':
           description: Successful Response
@@ -212,12 +244,25 @@ paths:
     post:
       summary: Get Address
       operationId: get_address_wallet_address_post
-      tags:
-        - rgb-sdk-api
       parameters:
-        - $ref: '#/components/parameters/XpubVan'
-        - $ref: '#/components/parameters/XpubCol'
-        - $ref: '#/components/parameters/MasterFingerprint'
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
       responses:
         '200':
           description: Successful Response
@@ -232,16 +277,29 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /wallet/issuenia:
+  /wallet/issueassetnia:
     post:
       summary: Issue Asset Nia
       operationId: issue_asset_nia_wallet_issueassetnia_post
-      tags:
-        - rgb-sdk-api
       parameters:
-        - $ref: '#/components/parameters/XpubVan'
-        - $ref: '#/components/parameters/XpubCol'
-        - $ref: '#/components/parameters/MasterFingerprint'
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
       requestBody:
         required: true
         content:
@@ -265,12 +323,25 @@ paths:
     post:
       summary: Get Asset Balance
       operationId: get_asset_balance_wallet_assetbalance_post
-      tags:
-        - rgb-sdk-api
       parameters:
-        - $ref: '#/components/parameters/XpubVan'
-        - $ref: '#/components/parameters/XpubCol'
-        - $ref: '#/components/parameters/MasterFingerprint'
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
       requestBody:
         required: true
         content:
@@ -294,12 +365,25 @@ paths:
     post:
       summary: Send Begin
       operationId: send_begin_wallet_sendbegin_post
-      tags:
-        - rgb-sdk-api
       parameters:
-        - $ref: '#/components/parameters/XpubVan'
-        - $ref: '#/components/parameters/XpubCol'
-        - $ref: '#/components/parameters/MasterFingerprint'
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
       requestBody:
         required: true
         content:
@@ -322,14 +406,27 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
   /wallet/sendend:
     post:
-      summary: Send End
-      operationId: send_end_wallet_sendend_post
-      tags:
-        - rgb-sdk-api
+      summary: Send Begin
+      operationId: send_begin_wallet_sendend_post
       parameters:
-        - $ref: '#/components/parameters/XpubVan'
-        - $ref: '#/components/parameters/XpubCol'
-        - $ref: '#/components/parameters/MasterFingerprint'
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
       requestBody:
         required: true
         content:
@@ -349,16 +446,29 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /wallet/blindreceive:
+  /blindreceive:
     post:
       summary: Generate Invoice
       operationId: generate_invoice_blindreceive_post
-      tags:
-        - rgb-sdk-api
       parameters:
-        - $ref: '#/components/parameters/XpubVan'
-        - $ref: '#/components/parameters/XpubCol'
-        - $ref: '#/components/parameters/MasterFingerprint'
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
       requestBody:
         required: true
         content:
@@ -382,12 +492,25 @@ paths:
     post:
       summary: Failtransfers
       operationId: failtransfers_wallet_failtransfers_post
-      tags:
-        - rgb-sdk-api
       parameters:
-        - $ref: '#/components/parameters/XpubVan'
-        - $ref: '#/components/parameters/XpubCol'
-        - $ref: '#/components/parameters/MasterFingerprint'
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
       requestBody:
         required: true
         content:
@@ -410,12 +533,25 @@ paths:
     post:
       summary: List Transaction
       operationId: list_transaction_wallet_listtransactions_post
-      tags:
-        - rgb-sdk-api
       parameters:
-        - $ref: '#/components/parameters/XpubVan'
-        - $ref: '#/components/parameters/XpubCol'
-        - $ref: '#/components/parameters/MasterFingerprint'
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
       responses:
         '200':
           description: Successful Response
@@ -432,12 +568,25 @@ paths:
     post:
       summary: List Transfers
       operationId: list_transfers_wallet_listtransfers_post
-      tags:
-        - rgb-sdk-api
       parameters:
-        - $ref: '#/components/parameters/XpubVan'
-        - $ref: '#/components/parameters/XpubCol'
-        - $ref: '#/components/parameters/MasterFingerprint'
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
       requestBody:
         required: true
         content:
@@ -464,12 +613,25 @@ paths:
     post:
       summary: Refresh Wallet
       operationId: refresh_wallet_wallet_refresh_post
-      tags:
-        - rgb-sdk-api
       parameters:
-        - $ref: '#/components/parameters/XpubVan'
-        - $ref: '#/components/parameters/XpubCol'
-        - $ref: '#/components/parameters/MasterFingerprint'
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
       responses:
         '200':
           description: Successful Response
@@ -486,8 +648,25 @@ paths:
     post:
       summary: Drop Wallet
       operationId: drop_wallet_wallet_drop_post
-      tags:
-        - rgb-sdk-api
+      parameters:
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
       responses:
         '200':
           description: Successful Response
@@ -495,41 +674,14 @@ paths:
             application/json:
               schema: {}
 components:
-  parameters:
-    XpubVan:
-      name: xpub-van
-      in: header
-      required: true
-      description: Account-level xPub of the vanilla side of the wallet
-      schema:
-        type: string
-    XpubCol:
-      name: xpub-col
-      in: header
-      required: true
-      description: Account-level xPub of the colored side of the wallet
-      schema:
-        type: string
-    MasterFingerprint:
-      name: master-fingerprint
-      in: header
-      required: true
-      description: Fingerprint of the master xPub (used as wallet ID)
-      schema:
-        type: string
-
   schemas:
     AssetBalanceRequest:
       properties:
-        xpub:
-          type: string
-          title: Xpub
         assetId:
           type: string
           title: Assetid
       type: object
       required:
-        - xpub
         - assetId
       title: AssetBalanceRequest
     AssetIface:
@@ -1068,3 +1220,4 @@ components:
         - amount_sat
         - blinding
       title: WitnessData
+
