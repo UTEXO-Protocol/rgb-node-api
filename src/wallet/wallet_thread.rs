@@ -167,7 +167,7 @@ impl WalletThread {
 
         while let Some((ido, cmd)) = self.rx.blocking_recv() {
             let cfg_base = self.cfg.clone();
-            log::debug!("new command: wid={:?} cmd={}", &ido, &cmd);
+            log::debug!("new command: wid={:?} cmd={}", ido, cmd);
 
             match cmd {
                 // --- Commands that MODIFY the Map (Write Lock) ---
@@ -288,7 +288,7 @@ impl WalletThread {
 }
 
 fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: WalletCmd) {
-    log::debug!("handle cmd: wid={}, cmd={}", &id, cmd);
+    log::debug!("handle cmd: wid={}, cmd={}", id, cmd);
     match cmd {
         WalletCmd::Backup { password, resp } => {
             let filename = format!("rgb-wallet.{}.rgb-lib_backup", id);
