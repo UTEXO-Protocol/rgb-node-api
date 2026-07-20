@@ -1,7 +1,7 @@
 # rgb-node-api
 
 Standalone HTTP service for managing **watch-only** RGB wallets. The service holds
-no private keys and never signs transactions — it is designed to be a semi-public
+no private keys and never signs transactions — it is designed to be a self-hosted semi-public
 API. Clients register watch-only wallets with their xPubs, read wallet state, and
 use the begin/end flow to sign PSBTs client-side.
 
