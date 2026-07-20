@@ -4,6 +4,26 @@ info:
   description: API documentation for RGB wallet management and asset transfers
   version: 1.0.0
 paths:
+  /healthcheck:
+    get:
+      summary: Healthcheck
+      description: Service liveness check. Returns an empty body.
+      operationId: healthcheck_healthcheck_get
+      responses:
+        '200':
+          description: Successful Response
+  /version:
+    get:
+      summary: Version
+      description: Build and version information for the running service.
+      operationId: version_version_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppInfo'
   /wallet/register:
     post:
       summary: Register Wallet
@@ -194,10 +214,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/AssetSchema'
-                title: Response List Assets Wallet Listassets Post
+                $ref: '#/components/schemas/Assets'
         '422':
           description: Validation Error
           content:
@@ -406,8 +423,8 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
   /wallet/sendend:
     post:
-      summary: Send Begin
-      operationId: send_begin_wallet_sendend_post
+      summary: Send End
+      operationId: send_end_wallet_sendend_post
       parameters:
         - name: xpub-van
           in: header
@@ -446,9 +463,56 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /blindreceive:
+  /wallet/blindreceive:
     post:
       summary: Generate Invoice
+      operationId: generate_invoice_wallet_blindreceive_post
+      parameters:
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RgbInvoiceRequestModel'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReceiveData'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /blindreceive:
+    post:
+      summary: Generate Invoice (deprecated alias)
+      description: >-
+        Deprecated root-level alias for `POST /wallet/blindreceive`, kept for
+        backwards compatibility and scheduled for removal. New integrations
+        should call `/wallet/blindreceive`.
+      deprecated: true
       operationId: generate_invoice_blindreceive_post
       parameters:
         - name: xpub-van
@@ -522,7 +586,9 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                type: boolean
+                title: Response Failtransfers Wallet Failtransfers Post
         '422':
           description: Validation Error
           content:
@@ -557,7 +623,11 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Transaction'
+                title: Response List Transaction Wallet Listtransactions Post
         '422':
           description: Validation Error
           content:
@@ -675,29 +745,148 @@ paths:
               schema: {}
 components:
   schemas:
-    AssetBalanceRequest:
+    AppInfo:
       properties:
-        assetId:
+        app:
           type: string
-          title: Assetid
+          title: App
+        version:
+          type: string
+          title: Version
+        build:
+          type: string
+          title: Build
+        commit:
+          type: string
+          title: Commit
       type: object
       required:
-        - assetId
+        - app
+        - version
+        - build
+        - commit
+      title: AppInfo
+    AssetBalanceRequest:
+      properties:
+        asset_id:
+          type: string
+          title: Asset Id
+      type: object
+      required:
+        - asset_id
       title: AssetBalanceRequest
-    AssetIface:
-      type: integer
-      enum:
-        - 0
-        - 1
-        - 2
-      title: AssetIface
+      description: >-
+        The legacy camelCase spelling `assetId` is still accepted for backwards
+        compatibility, but is undocumented and will be removed.
+    AssetCfa:
+      properties:
+        asset_id:
+          type: string
+          title: Asset Id
+        name:
+          type: string
+          title: Name
+        details:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Details
+        precision:
+          type: integer
+          title: Precision
+        issued_supply:
+          type: integer
+          title: Issued Supply
+        timestamp:
+          type: integer
+          title: Timestamp
+        added_at:
+          type: integer
+          title: Added At
+        balance:
+          $ref: '#/components/schemas/Balance'
+        media:
+          anyOf:
+            - $ref: '#/components/schemas/Media'
+            - type: 'null'
+      type: object
+      required:
+        - asset_id
+        - name
+        - details
+        - precision
+        - issued_supply
+        - timestamp
+        - added_at
+        - balance
+        - media
+      title: AssetCfa
+    AssetIfa:
+      properties:
+        asset_id:
+          type: string
+          title: Asset Id
+        ticker:
+          type: string
+          title: Ticker
+        name:
+          type: string
+          title: Name
+        details:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Details
+        precision:
+          type: integer
+          title: Precision
+        initial_supply:
+          type: integer
+          title: Initial Supply
+        max_supply:
+          type: integer
+          title: Max Supply
+        known_circulating_supply:
+          type: integer
+          title: Known Circulating Supply
+        timestamp:
+          type: integer
+          title: Timestamp
+        added_at:
+          type: integer
+          title: Added At
+        balance:
+          $ref: '#/components/schemas/Balance'
+        media:
+          anyOf:
+            - $ref: '#/components/schemas/Media'
+            - type: 'null'
+        reject_list_url:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Reject List Url
+      type: object
+      required:
+        - asset_id
+        - ticker
+        - name
+        - details
+        - precision
+        - initial_supply
+        - max_supply
+        - known_circulating_supply
+        - timestamp
+        - added_at
+        - balance
+        - media
+        - reject_list_url
+      title: AssetIfa
     AssetNia:
       properties:
         asset_id:
           type: string
           title: Asset Id
-        asset_iface:
-          $ref: '#/components/schemas/AssetIface'
         ticker:
           type: string
           title: Ticker
@@ -730,7 +919,6 @@ components:
       type: object
       required:
         - asset_id
-        - asset_iface
         - ticker
         - name
         - details
@@ -741,13 +929,117 @@ components:
         - balance
         - media
       title: AssetNia
-    AssetSchema:
-      type: integer
-      enum:
-        - 0
-        - 1
-        - 2
-      title: AssetSchema
+    AssetUda:
+      properties:
+        asset_id:
+          type: string
+          title: Asset Id
+        ticker:
+          type: string
+          title: Ticker
+        name:
+          type: string
+          title: Name
+        details:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Details
+        precision:
+          type: integer
+          title: Precision
+        timestamp:
+          type: integer
+          title: Timestamp
+        added_at:
+          type: integer
+          title: Added At
+        balance:
+          $ref: '#/components/schemas/Balance'
+        media:
+          anyOf:
+            - $ref: '#/components/schemas/Media'
+            - type: 'null'
+        token:
+          anyOf:
+            - $ref: '#/components/schemas/TokenLight'
+            - type: 'null'
+      type: object
+      required:
+        - asset_id
+        - ticker
+        - name
+        - details
+        - precision
+        - timestamp
+        - added_at
+        - balance
+        - media
+        - token
+      title: AssetUda
+    Assets:
+      properties:
+        nia:
+          anyOf:
+            - items:
+                $ref: '#/components/schemas/AssetNia'
+              type: array
+            - type: 'null'
+          title: Nia
+        uda:
+          anyOf:
+            - items:
+                $ref: '#/components/schemas/AssetUda'
+              type: array
+            - type: 'null'
+          title: Uda
+        cfa:
+          anyOf:
+            - items:
+                $ref: '#/components/schemas/AssetCfa'
+              type: array
+            - type: 'null'
+          title: Cfa
+        ifa:
+          anyOf:
+            - items:
+                $ref: '#/components/schemas/AssetIfa'
+              type: array
+            - type: 'null'
+          title: Ifa
+      type: object
+      required:
+        - nia
+        - uda
+        - cfa
+        - ifa
+      title: Assets
+      description: Assets owned by the wallet, grouped by schema.
+    Assignment:
+      anyOf:
+        - type: string
+          enum:
+            - NonFungible
+            - Any
+        - type: object
+          properties:
+            Fungible:
+              type: integer
+          required:
+            - Fungible
+          additionalProperties: false
+        - type: object
+          properties:
+            InflationRight:
+              type: integer
+          required:
+            - InflationRight
+          additionalProperties: false
+      title: Assignment
+      description: >-
+        An RGB assignment, serialized as an externally tagged enum: unit
+        variants are plain strings ("NonFungible", "Any"), data-carrying
+        variants are single-key objects (e.g. {"Fungible": 100}).
     Balance:
       properties:
         settled:
@@ -765,6 +1057,20 @@ components:
         - future
         - spendable
       title: Balance
+    BlockTime:
+      properties:
+        height:
+          type: integer
+          title: Height
+        timestamp:
+          type: integer
+          title: Timestamp
+      type: object
+      required:
+        - height
+        - timestamp
+      title: BlockTime
+      description: Height and Unix timestamp of the confirming block.
     BtcBalance:
       properties:
         vanilla:
@@ -778,9 +1084,9 @@ components:
       title: BtcBalance
     CreateUtxosBegin:
       properties:
-        upTo:
+        up_to:
           type: boolean
-          title: Upto
+          title: Up To
           default: false
         num:
           type: integer
@@ -790,25 +1096,33 @@ components:
           type: integer
           title: Size
           default: 1000
-        feeRate:
+        fee_rate:
           type: integer
-          title: Feerate
+          title: Fee Rate
           default: 1
       type: object
       title: CreateUtxosBegin
+      description: >-
+        The legacy camelCase spellings `upTo` and `feeRate` are still accepted
+        for backwards compatibility, but are undocumented and will be removed.
     CreateUtxosEnd:
       properties:
-        signedPsbt:
+        signed_psbt:
           type: string
-          title: Signedpsbt
+          title: Signed Psbt
       type: object
       required:
-        - signedPsbt
+        - signed_psbt
       title: CreateUtxosEnd
+      description: >-
+        The legacy camelCase spelling `signedPsbt` is still accepted for
+        backwards compatibility, but is undocumented and will be removed.
     FailTransferRequestModel:
       properties:
         batch_transfer_idx:
-          type: integer
+          anyOf:
+            - type: integer
+            - type: 'null'
           title: Batch Transfer Idx
         no_asset_only:
           type: boolean
@@ -819,10 +1133,8 @@ components:
           title: Skip Sync
           default: false
       type: object
-      required:
-        - batch_transfer_idx
       title: FailTransferRequestModel
-      description: Response model for fail transfer
+      description: Request model for fail transfer
     HTTPValidationError:
       properties:
         detail:
@@ -874,11 +1186,6 @@ components:
         digest:
           type: string
           title: Digest
-        hex:
-          anyOf:
-            - type: string
-            - type: 'null'
-          title: Hex
         mime:
           type: string
           title: Mime
@@ -948,7 +1255,9 @@ components:
         - amount
         - transport_endpoints
       title: Recipient
-      description: Recipient model for asset transfer.
+      description: >-
+        Recipient model for asset transfer. The amount is a plain integer and is
+        mapped to a fungible RGB assignment when the transfer is built.
     RegisterModel:
       properties:
         address:
@@ -968,16 +1277,15 @@ components:
             - type: string
             - type: 'null'
           title: Asset Id
-        amount:
-          type: integer
-          title: Amount
+        assignment:
+          $ref: '#/components/schemas/Assignment'
         settled:
           type: boolean
           title: Settled
       type: object
       required:
         - asset_id
-        - amount
+        - assignment
         - settled
       title: RgbAllocation
     RgbInvoiceRequestModel:
@@ -1050,6 +1358,91 @@ components:
         - txid
         - batch_transfer_idx
       title: SendResult
+    TokenLight:
+      properties:
+        index:
+          type: integer
+          title: Index
+        ticker:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Ticker
+        name:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Name
+        details:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Details
+        embedded_media:
+          type: boolean
+          title: Embedded Media
+        media:
+          anyOf:
+            - $ref: '#/components/schemas/Media'
+            - type: 'null'
+        attachments:
+          additionalProperties:
+            $ref: '#/components/schemas/Media'
+          type: object
+          title: Attachments
+        reserves:
+          type: boolean
+          title: Reserves
+      type: object
+      required:
+        - index
+        - ticker
+        - name
+        - details
+        - embedded_media
+        - media
+        - attachments
+        - reserves
+      title: TokenLight
+    Transaction:
+      properties:
+        transaction_type:
+          $ref: '#/components/schemas/TransactionType'
+        txid:
+          type: string
+          title: Txid
+        received:
+          type: integer
+          title: Received
+        sent:
+          type: integer
+          title: Sent
+        fee:
+          type: integer
+          title: Fee
+        confirmation_time:
+          anyOf:
+            - $ref: '#/components/schemas/BlockTime'
+            - type: 'null'
+      type: object
+      required:
+        - transaction_type
+        - txid
+        - received
+        - sent
+        - fee
+        - confirmation_time
+      title: Transaction
+      description: A Bitcoin transaction.
+    TransactionType:
+      type: string
+      enum:
+        - RgbSend
+        - Drain
+        - CreateUtxos
+        - SendBtc
+        - Incoming
+      title: TransactionType
     Transfer:
       properties:
         idx:
@@ -1066,9 +1459,15 @@ components:
           title: Updated At
         status:
           $ref: '#/components/schemas/TransferStatus'
-        amount:
-          type: integer
-          title: Amount
+        requested_assignment:
+          anyOf:
+            - $ref: '#/components/schemas/Assignment'
+            - type: 'null'
+        assignments:
+          items:
+            $ref: '#/components/schemas/Assignment'
+          type: array
+          title: Assignments
         kind:
           $ref: '#/components/schemas/TransferKind'
         txid:
@@ -1081,6 +1480,11 @@ components:
             - type: string
             - type: 'null'
           title: Recipient Id
+        proxy_recipient_id:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Proxy Recipient Id
         receive_utxo:
           anyOf:
             - $ref: '#/components/schemas/Outpoint'
@@ -1089,16 +1493,31 @@ components:
           anyOf:
             - $ref: '#/components/schemas/Outpoint'
             - type: 'null'
-        expiration:
+        expiration_timestamp:
           anyOf:
             - type: integer
             - type: 'null'
-          title: Expiration
+          title: Expiration Timestamp
         transport_endpoints:
           items:
             $ref: '#/components/schemas/TransferTransportEndpoint'
           type: array
           title: Transport Endpoints
+        invoice_string:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Invoice String
+        consignment_path:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Consignment Path
+        psbt_path:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Psbt Path
       type: object
       required:
         - idx
@@ -1106,31 +1525,39 @@ components:
         - created_at
         - updated_at
         - status
-        - amount
+        - requested_assignment
+        - assignments
         - kind
         - txid
         - recipient_id
         - receive_utxo
         - change_utxo
-        - expiration
+        - expiration_timestamp
         - transport_endpoints
+        - invoice_string
+        - consignment_path
+        - psbt_path
       title: Transfer
       description: Model representing a transfer.
     TransferKind:
-      type: integer
+      type: string
       enum:
-        - 0
-        - 1
-        - 2
-        - 3
+        - Issuance
+        - ReceiveBlind
+        - ReceiveWitness
+        - Send
+        - Inflation
+        - Burn
       title: TransferKind
     TransferStatus:
-      type: integer
+      type: string
       enum:
-        - 0
-        - 1
-        - 2
-        - 3
+        - WaitingCounterparty
+        - WaitingSafeHeight
+        - WaitingConfirmations
+        - Settled
+        - Failed
+        - Initiated
       title: TransferStatus
     TransferTransportEndpoint:
       properties:
@@ -1149,20 +1576,27 @@ components:
         - used
       title: TransferTransportEndpoint
     TransportType:
-      type: integer
+      type: string
       enum:
-        - 0
+        - JsonRpc
       title: TransportType
     Unspent:
       properties:
         utxo:
           $ref: '#/components/schemas/Utxo'
         rgb_allocations:
-          $ref: '#/components/schemas/RgbAllocation'
+          items:
+            $ref: '#/components/schemas/RgbAllocation'
+          type: array
+          title: Rgb Allocations
+        pending_blinded:
+          type: integer
+          title: Pending Blinded
       type: object
       required:
         - utxo
         - rgb_allocations
+        - pending_blinded
       title: Unspent
     Utxo:
       properties:
@@ -1220,4 +1654,3 @@ components:
         - amount_sat
         - blinding
       title: WitnessData
-

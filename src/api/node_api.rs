@@ -79,14 +79,16 @@ pub struct AssetId {
 }
 
 #[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct AssetBalanceReq {
+    /// `assetId` is the pre-unification spelling, accepted for compatibility.
+    #[serde(alias = "assetId")]
     pub asset_id: String,
 }
 
 #[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct Psbt {
+    /// `signedPsbt` is the pre-unification spelling, accepted for compatibility.
+    #[serde(alias = "signedPsbt")]
     pub signed_psbt: String,
 }
 

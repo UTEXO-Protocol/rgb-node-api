@@ -75,15 +75,16 @@ pub struct IssueNiaReq {
 
 /// `CreateUtxosBegin` in the API spec.
 #[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct CreateUtxoBeginReq {
-    #[serde(default)]
+    /// `upTo` is the pre-unification spelling, accepted for compatibility.
+    #[serde(default, alias = "upTo")]
     pub up_to: bool,
     #[serde(default = "default_num")]
     pub num: Option<u8>,
     #[serde(default = "default_size")]
     pub size: Option<u32>,
-    #[serde(default = "default_fee_rate")]
+    /// `feeRate` is the pre-unification spelling, accepted for compatibility.
+    #[serde(default = "default_fee_rate", alias = "feeRate")]
     pub fee_rate: u64,
 }
 

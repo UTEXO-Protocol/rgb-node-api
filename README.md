@@ -68,7 +68,7 @@ The begin/end pattern allows clients to sign PSBTs externally:
 | POST | `/listtransactions` | List BTC transactions |
 | POST | `/listtransfers` | List RGB transfers for an asset |
 | POST | `/blindreceive` | Generate RGB invoice |
-| POST | `/issuenia` | Issue new NIA token |
+| POST | `/issueassetnia` | Issue new NIA token |
 | POST | `/createutxosbegin` | Create UTXOs (unsigned PSBT) |
 | POST | `/createutxosend` | Finalize UTXO creation (signed PSBT) |
 | POST | `/sendbegin` | Send RGB token (unsigned PSBT) |
@@ -76,3 +76,7 @@ The begin/end pattern allows clients to sign PSBTs externally:
 | POST | `/failtransfers` | Mark transfers as failed |
 | POST | `/refresh` | Force wallet sync |
 | POST | `/drop` | Remove wallet from memory |
+
+A root-level `POST /blindreceive` is also registered as a legacy alias for
+`POST /wallet/blindreceive`. It is marked for removal in the source and should
+not be used — integrators should call `/wallet/blindreceive`.
