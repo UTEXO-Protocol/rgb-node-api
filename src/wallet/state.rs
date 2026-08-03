@@ -8,6 +8,13 @@ use rgb_lib::wallet::{
 
 use super::Config;
 
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or_default()
+}
+
 pub struct RgbWalletState {
     pub id: String,
     pub master_xpub: String,
@@ -72,10 +79,16 @@ impl RgbWalletState {
     ) -> Result<ReceiveData, rgb_lib::Error> {
         let transport_endpoints = self.proxy_host.iter().cloned().collect();
 
+        // The API takes a duration, rgb-lib wants an absolute unix timestamp:
+        // passing the duration through unchanged lands in 1970 and rgb-lib
+        // rejects it with InvalidExpiration.
+        let expiration_timestamp =
+            duration_seconds.map(|secs| unix_now().saturating_add(u64::from(secs)));
+
         let rd = self.wallet.blind_receive(
             asset_id,
             assigment,
-            duration_seconds.map(u64::from),
+            expiration_timestamp,
             transport_endpoints,
             min_confirmations,
         )?;

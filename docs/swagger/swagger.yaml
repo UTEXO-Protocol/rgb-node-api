@@ -54,12 +54,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RegisterModel'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /wallet/listunspents:
     post:
       summary: List Unspents
@@ -93,12 +95,14 @@ paths:
                 items:
                   $ref: '#/components/schemas/Unspent'
                 title: Response List Unspents Wallet Listunspents Post
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /wallet/createutxosbegin:
     post:
       summary: Create Utxos Begin
@@ -130,18 +134,23 @@ paths:
               $ref: '#/components/schemas/CreateUtxosBegin'
       responses:
         '200':
-          description: Successful Response
+          description: The unsigned PSBT to be signed by the client.
           content:
             application/json:
               schema:
-                type: string
-                title: Response Create Utxos Begin Wallet Createutxosbegin Post
+                $ref: '#/components/schemas/PsbtResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /wallet/createutxosend:
     post:
       summary: Create Utxos End
@@ -173,18 +182,21 @@ paths:
               $ref: '#/components/schemas/CreateUtxosEnd'
       responses:
         '200':
-          description: Successful Response
+          description: How many UTXOs the broadcast transaction created.
           content:
             application/json:
               schema:
-                type: integer
-                title: Response Create Utxos End Wallet Createutxosend Post
+                $ref: '#/components/schemas/CreateUtxosResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /wallet/listassets:
     post:
       summary: List Assets
@@ -215,12 +227,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Assets'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /wallet/btcbalance:
     post:
       summary: Get Btc Balance
@@ -251,12 +265,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BtcBalance'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /wallet/address:
     post:
       summary: Get Address
@@ -282,18 +298,19 @@ paths:
             title: Master Fingerprint
       responses:
         '200':
-          description: Successful Response
+          description: The next unused wallet address.
           content:
             application/json:
               schema:
-                type: string
-                title: Response Get Address Wallet Address Post
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                $ref: '#/components/schemas/AddressResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /wallet/issueassetnia:
     post:
       summary: Issue Asset Nia
@@ -330,12 +347,16 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AssetNia'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /wallet/assetbalance:
     post:
       summary: Get Asset Balance
@@ -372,12 +393,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Balance'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /wallet/sendbegin:
     post:
       summary: Send Begin
@@ -409,18 +436,25 @@ paths:
               $ref: '#/components/schemas/SendAssetBeginRequestModel'
       responses:
         '200':
-          description: Successful Response
+          description: The unsigned PSBT to be signed by the client.
           content:
             application/json:
               schema:
-                type: string
-                title: Response Send Begin Wallet Sendbegin Post
+                $ref: '#/components/schemas/PsbtResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /wallet/sendend:
     post:
       summary: Send End
@@ -457,12 +491,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SendResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /wallet/blindreceive:
     post:
       summary: Generate Invoice
@@ -499,12 +539,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReceiveData'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /blindreceive:
     post:
       summary: Generate Invoice (deprecated alias)
@@ -546,12 +594,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReceiveData'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /wallet/failtransfers:
     post:
       summary: Failtransfers
@@ -583,18 +639,25 @@ paths:
               $ref: '#/components/schemas/FailTransferRequestModel'
       responses:
         '200':
-          description: Successful Response
+          description: Whether any transfer was set to the failed status.
           content:
             application/json:
               schema:
-                type: boolean
-                title: Response Failtransfers Wallet Failtransfers Post
+                $ref: '#/components/schemas/FailTransferResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /wallet/listtransactions:
     post:
       summary: List Transaction
@@ -628,12 +691,14 @@ paths:
                 items:
                   $ref: '#/components/schemas/Transaction'
                 title: Response List Transaction Wallet Listtransactions Post
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /wallet/listtransfers:
     post:
       summary: List Transfers
@@ -673,12 +738,18 @@ paths:
                 items:
                   $ref: '#/components/schemas/Transfer'
                 title: Response List Transfers Wallet Listtransfers Post
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /wallet/refresh:
     post:
       summary: Refresh Wallet
@@ -704,16 +775,19 @@ paths:
             title: Master Fingerprint
       responses:
         '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-        '422':
-          description: Validation Error
+          description: The wallet was refreshed.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                $ref: '#/components/schemas/EmptyResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /wallet/drop:
     post:
       summary: Drop Wallet
@@ -739,12 +813,150 @@ paths:
             title: Master Fingerprint
       responses:
         '200':
-          description: Successful Response
+          description: The wallet was removed from memory.
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/EmptyResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
 components:
+  responses:
+    BadRequest:
+      description: |-
+        The request data is invalid. `error.code` is one of: 1001
+        `bad_input`, 1002 `invalid_address`, 1003 `not_enough_balance`,
+        1004 `not_enough_utxos`, 1005 `not_enough_assets`, 1006
+        `invalid_fee_rate`, 1007 `invalid_psbt`, 1008 `invalid_recipient`,
+        1010 `unsupported`.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: >-
+        A required wallet key header (`xpub-van`, `xpub-col`,
+        `master-fingerprint`) is missing. `error.code` is 401 `access_denied`.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: >-
+        The referenced asset, transfer or batch transfer does not exist.
+        `error.code` is 1000 `not_found`.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: >-
+        The request conflicts with the current wallet state, e.g. the recipient
+        ID was already used or the allocations are already available.
+        `error.code` is 1009 `conflict`.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    UnprocessableEntity:
+      description: >-
+        The request body is not valid JSON or does not match the expected
+        schema. `error.code` is 1001 `bad_input` and `error.details.body`
+        holds the parser message.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalError:
+      description: >-
+        Something failed on the server side. The message is intentionally
+        opaque; `error.code` is 500 `internal_error`.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ServiceUnavailable:
+      description: >-
+        A dependency the wallet needs (indexer, RGB proxy, network) is
+        unreachable. The request can be retried. `error.code` is 503
+        `service_unavailable`.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
   schemas:
+    AddressResponse:
+      properties:
+        address:
+          type: string
+          title: Address
+          examples:
+            - bcrt1qk0k2xn9y8dxsgkqfp0mrqx5cgqm2lqxhnzq3lc
+      type: object
+      required:
+        - address
+      title: AddressResponse
+    ApiError:
+      properties:
+        code:
+          type: integer
+          title: Code
+          description: |-
+            Machine-readable error code, stable across releases:
+
+            | code | status | meaning |
+            | ---- | ------ | ------- |
+            | 500 | `internal_error` | server-side failure |
+            | 503 | `service_unavailable` | indexer / proxy / network unreachable |
+            | 401 | `access_denied` | missing or invalid wallet key headers |
+            | 403 | `access_forbidden` | the key is blocked or suspended |
+            | 1000 | `not_found` | the referenced entity does not exist |
+            | 1001 | `bad_input` | invalid request data |
+            | 1002 | `invalid_address` | invalid bitcoin address |
+            | 1003 | `not_enough_balance` | not enough bitcoins to fund the operation |
+            | 1004 | `not_enough_utxos` | create more UTXOs first |
+            | 1005 | `not_enough_assets` | not enough assets for the requested amount |
+            | 1006 | `invalid_fee_rate` | fee rate outside the accepted range |
+            | 1007 | `invalid_psbt` | the PSBT is malformed or cannot be finalized |
+            | 1008 | `invalid_recipient` | invalid recipient, invoice or transport endpoint |
+            | 1009 | `conflict` | the request clashes with the current wallet state |
+            | 1010 | `unsupported` | the wallet cannot perform this operation |
+          examples:
+            - 1006
+        status:
+          type: string
+          title: Status
+          description: Short slug for `code`, e.g. `invalid_fee_rate`.
+          examples:
+            - invalid_fee_rate
+        message:
+          type: string
+          title: Message
+          description: >-
+            Human-readable description of what went wrong. Empty or opaque for
+            server-side failures.
+          examples:
+            - 'Invalid fee rate: value under minimum 1'
+        details:
+          type: object
+          additionalProperties:
+            type: string
+          title: Details
+          description: >-
+            Extra context. Errors raised by the wallet carry `kind`, the
+            underlying rgb-lib error variant, which is the most precise
+            discriminator available to clients.
+          examples:
+            - kind: InvalidFeeRate
+      type: object
+      required:
+        - code
+        - status
+        - message
+        - details
+      title: ApiError
     AppInfo:
       properties:
         app:
@@ -1118,6 +1330,34 @@ components:
       description: >-
         The legacy camelCase spelling `signedPsbt` is still accepted for
         backwards compatibility, but is undocumented and will be removed.
+    CreateUtxosResponse:
+      properties:
+        created:
+          type: integer
+          title: Created
+          description: Number of UTXOs created by the broadcast transaction.
+          examples:
+            - 5
+      type: object
+      required:
+        - created
+      title: CreateUtxosResponse
+    EmptyResponse:
+      properties: {}
+      type: object
+      title: EmptyResponse
+      description: >-
+        An operation that carries no data back. Kept as an object so fields can
+        be added later without breaking clients.
+    ErrorResponse:
+      properties:
+        error:
+          $ref: '#/components/schemas/ApiError'
+      type: object
+      required:
+        - error
+      title: ErrorResponse
+      description: The envelope returned by every non-2xx response.
     FailTransferRequestModel:
       properties:
         batch_transfer_idx:
@@ -1136,15 +1376,18 @@ components:
       type: object
       title: FailTransferRequestModel
       description: Request model for fail transfer
-    HTTPValidationError:
+    FailTransferResponse:
       properties:
-        detail:
-          items:
-            $ref: '#/components/schemas/ValidationError'
-          type: array
-          title: Detail
+        changed:
+          type: boolean
+          title: Changed
+          description: Whether any transfer changed to the failed status.
+          examples:
+            - true
       type: object
-      title: HTTPValidationError
+      required:
+        - changed
+      title: FailTransferResponse
     IssueAssetNiaRequestModel:
       properties:
         amounts:
@@ -1210,6 +1453,18 @@ components:
         - txid
         - vout
       title: Outpoint
+    PsbtResponse:
+      properties:
+        psbt:
+          type: string
+          title: Psbt
+          description: Base64 encoded unsigned PSBT, to be signed by the client.
+          examples:
+            - cHNidP8BAH0CAAAAAeQ...
+      type: object
+      required:
+        - psbt
+      title: PsbtResponse
     ReceiveData:
       properties:
         invoice:
@@ -1294,20 +1549,32 @@ components:
         min_confirmations:
           type: integer
           title: Min Confirmations
+          description: Confirmations the incoming transfer must reach to settle.
           default: 1
         asset_id:
           anyOf:
             - type: string
             - type: 'null'
           title: Asset Id
+          description: >-
+            Bind the invoice to one asset. The asset must already be known to
+            this wallet, otherwise the request fails with 404 `not_found`. Omit
+            it (or send `null`) to accept any asset — the only option for an
+            asset the wallet has never held.
         amount:
           anyOf:
             - type: integer
             - type: 'null'
           title: Amount
+          description: >-
+            Amount to request, in the asset's smallest unit. Omit it, or send
+            `0`, to accept any amount.
         duration_seconds:
           type: integer
           title: Duration Seconds
+          description: >-
+            How long the invoice stays valid, in seconds from now. Send `null`
+            for an invoice that never expires.
           default: 3600
       type: object
       title: RgbInvoiceRequestModel
@@ -1620,27 +1887,6 @@ components:
         - colorable
         - exists
       title: Utxo
-    ValidationError:
-      properties:
-        loc:
-          items:
-            anyOf:
-              - type: string
-              - type: integer
-          type: array
-          title: Location
-        msg:
-          type: string
-          title: Message
-        type:
-          type: string
-          title: Error Type
-      type: object
-      required:
-        - loc
-        - msg
-        - type
-      title: ValidationError
     WitnessData:
       properties:
         amount_sat:

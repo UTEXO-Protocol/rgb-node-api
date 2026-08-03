@@ -10,6 +10,7 @@ use tokio::sync::{mpsc, oneshot};
 use super::Config;
 use super::RgbWalletState;
 use super::models::*;
+use crate::log_rgb_err;
 
 type ResultChan<T> = oneshot::Sender<RResult<T>>;
 
@@ -312,7 +313,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                     }))
                     .is_ok(),
                 Err(err) => {
-                    log::error!("get wallet backup : wid={id} error={:?}", err);
+                    log_rgb_err!(err, "get wallet backup : wid={id} error={:?}", err);
                     resp.send(Err(err)).is_ok()
                 }
             }
@@ -320,7 +321,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
         WalletCmd::Address { resp } => match wallet_state.lock().unwrap().wallet.get_address() {
             Ok(a) => resp.send(Ok(AddressRes { address: a })).is_ok(),
             Err(err) => {
-                log::error!("get address: wid={id} error={:?}", err);
+                log_rgb_err!(err, "get address: wid={id} error={:?}", err);
                 resp.send(Err(err)).is_ok()
             }
         },
@@ -338,7 +339,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
             {
                 Ok(val) => resp.send(Ok(val)).is_ok(),
                 Err(err) => {
-                    log::error!("fail transfer: wid={id} error={:?}", err);
+                    log_rgb_err!(err, "fail transfer: wid={id} error={:?}", err);
                     resp.send(Err(err)).is_ok()
                 }
             }
@@ -352,7 +353,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
             {
                 Ok(val) => resp.send(Ok(val)).is_ok(),
                 Err(err) => {
-                    log::error!("list transfers: wid={id} error={:?}", err);
+                    log_rgb_err!(err, "list transfers: wid={id} error={:?}", err);
                     resp.send(Err(err)).is_ok()
                 }
             }
@@ -366,7 +367,8 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
             {
                 Ok(val) => resp.send(Ok(val)).is_ok(),
                 Err(err) => {
-                    log::error!(
+                    log_rgb_err!(
+                        err,
                         "list transfers by asset: wid={id} asset={asset_id} error={:?}",
                         err
                     );
@@ -388,7 +390,8 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                 }) {
                 Ok(val) => resp.send(Ok(val)).is_ok(),
                 Err(err) => {
-                    log::error!(
+                    log_rgb_err!(
+                        err,
                         "list transfers by asset: wid={id} recipient={recipient_id} error={:?}",
                         err
                     );
@@ -403,7 +406,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
             match w.wallet.list_transactions(Some(wo), false) {
                 Ok(val) => resp.send(Ok(val)).is_ok(),
                 Err(err) => {
-                    log::error!("list transactions: wid={id} error={:?}", err);
+                    log_rgb_err!(err, "list transactions: wid={id} error={:?}", err);
                     resp.send(Err(err)).is_ok()
                 }
             }
@@ -415,7 +418,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
             match w.wallet.list_unspents(Some(wo), false, false) {
                 Ok(val) => resp.send(Ok(val)).is_ok(),
                 Err(err) => {
-                    log::error!("list unspends: wid={id} error={:?}", err);
+                    log_rgb_err!(err, "list unspends: wid={id} error={:?}", err);
                     resp.send(Err(err)).is_ok()
                 }
             }
@@ -424,7 +427,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
             match wallet_state.lock().unwrap().wallet.list_assets(Vec::new()) {
                 Ok(val) => resp.send(Ok(val)).is_ok(),
                 Err(err) => {
-                    log::error!("list assets: wid={id} error={:?}", err);
+                    log_rgb_err!(err, "list assets: wid={id} error={:?}", err);
                     resp.send(Err(err)).is_ok()
                 }
             }
@@ -438,7 +441,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
             {
                 Ok(val) => resp.send(Ok(val)).is_ok(),
                 Err(err) => {
-                    log::error!("get asset: wid={id} asset={asset_id} error={:?}", err);
+                    log_rgb_err!(err, "get asset: wid={id} asset={asset_id} error={:?}", err);
                     resp.send(Err(err)).is_ok()
                 }
             }
@@ -449,7 +452,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
             match w.balance_btc() {
                 Ok(val) => resp.send(Ok(val)).is_ok(),
                 Err(err) => {
-                    log::error!("btc balance: wid={id} error={:?}", err);
+                    log_rgb_err!(err, "btc balance: wid={id} error={:?}", err);
                     resp.send(Err(err)).is_ok()
                 }
             }
@@ -458,15 +461,21 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
             match wallet_state.lock().unwrap().balance_token(&asset_id) {
                 Ok(val) => resp.send(Ok(val)).is_ok(),
                 Err(err) => {
-                    log::error!("token balance: wid={id} asset={asset_id} error={:?}", err);
+                    log_rgb_err!(
+                        err,
+                        "token balance: wid={id} asset={asset_id} error={:?}",
+                        err
+                    );
                     resp.send(Err(err)).is_ok()
                 }
             }
         }
         WalletCmd::Receive { req, resp } => {
+            // A missing amount and an explicit 0 both mean "no amount
+            // restriction": an invoice demanding exactly 0 units is useless.
             let assignment = match req.amount {
-                Some(amount) => rgb_lib::Assignment::Fungible(amount),
-                None => rgb_lib::Assignment::Any,
+                Some(amount) if amount > 0 => rgb_lib::Assignment::Fungible(amount),
+                _ => rgb_lib::Assignment::Any,
             };
             match wallet_state.lock().unwrap().blind_receive_token(
                 req.asset_id,
@@ -476,7 +485,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
             ) {
                 Ok(val) => resp.send(Ok(val)).is_ok(),
                 Err(err) => {
-                    log::error!("blind recieve: wid={id} error={:?}", err);
+                    log_rgb_err!(err, "blind recieve: wid={id} error={:?}", err);
                     resp.send(Err(err)).is_ok()
                 }
             }
@@ -495,7 +504,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
             ) {
                 Ok(val) => resp.send(Ok(val)).is_ok(),
                 Err(err) => {
-                    log::error!("create utxo begin: wid={id} error={:?}", err);
+                    log_rgb_err!(err, "create utxo begin: wid={id} error={:?}", err);
                     resp.send(Err(err)).is_ok()
                 }
             }
@@ -506,7 +515,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
             match w.wallet.create_utxos_end(wo, psbt) {
                 Ok(val) => resp.send(Ok(val as usize)).is_ok(),
                 Err(err) => {
-                    log::error!("create utxo end: wid={id} error={:?}", err);
+                    log_rgb_err!(err, "create utxo end: wid={id} error={:?}", err);
                     resp.send(Err(err)).is_ok()
                 }
             }
@@ -533,7 +542,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
             ) {
                 Ok(val) => resp.send(Ok(val.psbt)).is_ok(),
                 Err(err) => {
-                    log::error!("send begin: wid={id} error={:?}", err);
+                    log_rgb_err!(err, "send begin: wid={id} error={:?}", err);
                     resp.send(Err(err)).is_ok()
                 }
             }
@@ -544,7 +553,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
             match w.wallet.send_end(wo, psbt) {
                 Ok(val) => resp.send(Ok(val)).is_ok(),
                 Err(err) => {
-                    log::error!("send end: wid={id} error={:?}", err);
+                    log_rgb_err!(err, "send end: wid={id} error={:?}", err);
                     resp.send(Err(err)).is_ok()
                 }
             }
@@ -563,7 +572,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
             ) {
                 Ok(val) => resp.send(Ok(val)).is_ok(),
                 Err(err) => {
-                    log::error!("send btc begin: wid={id} error={:?}", err);
+                    log_rgb_err!(err, "send btc begin: wid={id} error={:?}", err);
                     resp.send(Err(err)).is_ok()
                 }
             }
@@ -574,7 +583,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
             match w.wallet.send_btc_end(wo, psbt) {
                 Ok(val) => resp.send(Ok(val)).is_ok(),
                 Err(err) => {
-                    log::error!("send btc end: wid={id} error={:?}", err);
+                    log_rgb_err!(err, "send btc end: wid={id} error={:?}", err);
                     resp.send(Err(err)).is_ok()
                 }
             }
@@ -587,7 +596,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
             {
                 Ok(val) => resp.send(Ok(val)).is_ok(),
                 Err(err) => {
-                    log::error!("issue token: wid={id} error={:?}", err);
+                    log_rgb_err!(err, "issue token: wid={id} error={:?}", err);
                     resp.send(Err(err)).is_ok()
                 }
             }
@@ -598,7 +607,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
             match w.wallet.refresh(wo, None, Vec::new(), false) {
                 Ok(_) => resp.send(Ok(())).is_ok(),
                 Err(err) => {
-                    log::error!("refresh wallet: wid={id} error={:?}", err);
+                    log_rgb_err!(err, "refresh wallet: wid={id} error={:?}", err);
                     resp.send(Err(err)).is_ok()
                 }
             }

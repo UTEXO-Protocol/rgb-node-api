@@ -56,13 +56,34 @@ pub fn not_found() -> ApiError {
 }
 
 pub fn bad_requests(message: &str) -> ApiError {
-    let code = ApiErrorCode::BadInput;
+    error_with(StatusCode::BAD_REQUEST, ApiErrorCode::BadInput, message)
+}
+
+pub fn service_unavailable(message: &str) -> ApiError {
+    error_with(
+        StatusCode::SERVICE_UNAVAILABLE,
+        ApiErrorCode::ServiceUnavailable,
+        message,
+    )
+}
+
+/// Build an error with an explicit status/code pair, for callers that map a
+/// domain error onto one of the [`ApiErrorCode`] values.
+pub fn error_with(http_code: StatusCode, code: ApiErrorCode, message: &str) -> ApiError {
     ApiError {
-        http_code: StatusCode::BAD_REQUEST,
+        http_code,
         code: code as u16,
         status: code.to_string(),
         message: message.into(),
         details: HashMap::new(),
+    }
+}
+
+impl ApiError {
+    /// Attach a machine-readable detail to the response body.
+    pub fn with_detail(mut self, key: &str, value: impl Into<String>) -> Self {
+        self.details.insert(key.to_string(), value.into());
+        self
     }
 }
 
@@ -106,6 +127,18 @@ pub enum ApiErrorCode {
     NotEnoughBalance = 1003,
     // collect utxo: increase "max_utxos" parameter
     NeedMoreUtxos = 1004,
+    // send: the wallet holds less of the asset than requested
+    NotEnoughAssets = 1005,
+    // the fee rate is outside the accepted range
+    InvalidFeeRate = 1006,
+    // the submitted PSBT is malformed or cannot be finalized
+    InvalidPsbt = 1007,
+    // the recipient, invoice or transport endpoint data is invalid
+    InvalidRecipient = 1008,
+    // the request conflicts with the current wallet state
+    Conflict = 1009,
+    // the wallet does not support the requested operation
+    Unsupported = 1010,
 }
 
 impl Display for ApiErrorCode {
@@ -120,6 +153,12 @@ impl Display for ApiErrorCode {
             Self::InvalidAddress => "invalid_address",
             Self::NotEnoughBalance => "not_enough_balance",
             Self::NeedMoreUtxos => "not_enough_utxos",
+            Self::NotEnoughAssets => "not_enough_assets",
+            Self::InvalidFeeRate => "invalid_fee_rate",
+            Self::InvalidPsbt => "invalid_psbt",
+            Self::InvalidRecipient => "invalid_recipient",
+            Self::Conflict => "conflict",
+            Self::Unsupported => "unsupported",
         };
         write!(f, "{val}")
     }
