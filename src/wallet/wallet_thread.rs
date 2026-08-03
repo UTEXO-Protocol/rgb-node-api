@@ -344,7 +344,12 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
             }
         }
         WalletCmd::Transfers { resp } => {
-            match wallet_state.lock().unwrap().wallet.list_transfers(None) {
+            match wallet_state
+                .lock()
+                .unwrap()
+                .wallet
+                .list_transfers(wallet::AssetFilter::Any, None)
+            {
                 Ok(val) => resp.send(Ok(val)).is_ok(),
                 Err(err) => {
                     log::error!("list transfers: wid={id} error={:?}", err);
@@ -357,7 +362,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                 .lock()
                 .unwrap()
                 .wallet
-                .list_transfers(Some(asset_id.clone()))
+                .list_transfers(wallet::AssetFilter::Id(asset_id.clone()), None)
             {
                 Ok(val) => resp.send(Ok(val)).is_ok(),
                 Err(err) => {
@@ -375,7 +380,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                 .lock()
                 .unwrap()
                 .wallet
-                .list_transfers(None)
+                .list_transfers(wallet::AssetFilter::Any, None)
                 .map(|transfers| {
                     transfers
                         .into_iter()

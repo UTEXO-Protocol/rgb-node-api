@@ -1020,6 +1020,7 @@ components:
         - type: string
           enum:
             - NonFungible
+            - LinkRight
             - Any
         - type: object
           properties:
@@ -1038,8 +1039,8 @@ components:
       title: Assignment
       description: >-
         An RGB assignment, serialized as an externally tagged enum: unit
-        variants are plain strings ("NonFungible", "Any"), data-carrying
-        variants are single-key objects (e.g. {"Fungible": 100}).
+        variants are plain strings ("NonFungible", "LinkRight", "Any"),
+        data-carrying variants are single-key objects (e.g. {"Fungible": 100}).
     Balance:
       properties:
         settled:
@@ -1548,6 +1549,7 @@ components:
         - Send
         - Inflation
         - Burn
+        - Link
       title: TransferKind
     TransferStatus:
       type: string
