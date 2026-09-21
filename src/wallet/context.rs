@@ -267,6 +267,7 @@ impl WalletCtx {
     }
 
     pub async fn send_begin(&self, req: SendBeginReq) -> Result<String, rgb_lib::Error> {
+        req.validate_expiration()?;
         let (resp, recv) = oneshot::channel();
         let cmd = WalletCmd::SendBegin { req, resp };
         self.send_cmd(cmd, recv).await

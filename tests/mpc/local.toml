@@ -1,0 +1,12 @@
+[api]
+listen_address = "127.0.0.1"
+port = 31011
+
+[wallet]
+data_dir = "./.mpc-poc-data"
+network = "regtest"
+btc_rpc_address = "127.0.0.1:19443"
+btc_rpc_user = "user"
+btc_rpc_password = "default_password"
+indexer_address = "127.0.0.1:51011"
+proxy_address = ["rpc://127.0.0.1:31010/json-rpc"]

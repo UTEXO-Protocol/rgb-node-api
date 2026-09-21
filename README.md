@@ -7,6 +7,12 @@ use the begin/end flow to sign PSBTs client-side.
 
 - **Node/SDK API** (`/wallet/`) -- register watch-only wallets, read state, and use
   begin/end endpoints for external signing (the client holds the keys)
+- **Internal MPC API** (`/internal/mpc/`) -- Gateway-authenticated public-key registration,
+  witness invoices and NIA receiving, plus a separate Dynamic Testnet3 return adapter.
+  Vault sends use operator helpers.
+
+The MPC POC currently uses the sibling `../rgb-lib` checkout via an explicit Cargo
+patch. Keep both repositories together; the baseline git pin remains in Cargo.toml.
 
 ## Running
 

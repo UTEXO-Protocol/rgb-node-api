@@ -13,6 +13,9 @@ pub struct Config {
     pub btc_rpc_password: String,
     pub indexer_address: String,
     pub proxy_address: Vec<String>,
+    /// EVM RPC used for BFA consignment validation. Optional for NIA wallets.
+    #[serde(default)]
+    pub eth_rpc_url: Option<String>,
 }
 
 impl Config {
@@ -26,21 +29,58 @@ impl Config {
         data_dir.to_str().unwrap().to_owned()
     }
 
-    pub fn net(&self) -> BitcoinNetwork {
-        match self.network.to_ascii_lowercase().as_str() {
+    pub fn net(&self) -> Result<BitcoinNetwork, rgb_lib::Error> {
+        Ok(match self.network.to_ascii_lowercase().as_str() {
             "mainnet" => BitcoinNetwork::Mainnet,
             "regtest" => BitcoinNetwork::Regtest,
             "signet" => BitcoinNetwork::Signet,
             "testnet" => BitcoinNetwork::Testnet,
             "testnet4" => BitcoinNetwork::Testnet4,
-            _ => BitcoinNetwork::Mainnet,
-        }
+            _ => {
+                return Err(rgb_lib::Error::InvalidBitcoinNetwork {
+                    network: self.network.clone(),
+                });
+            }
+        })
     }
 
     pub fn read(path: &str) -> anyhow::Result<Config> {
         let contents = std::fs::read_to_string(path)?;
         let config: Config = Config::from_toml_str(&contents)?;
+        config.net()?;
 
         Ok(config)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unknown_or_missing_network_never_selects_mainnet() {
+        for network in ["", "testent", "bitcoin", " regtest"] {
+            let cfg = Config {
+                network: network.into(),
+                ..Default::default()
+            };
+            assert!(matches!(
+                cfg.net(),
+                Err(rgb_lib::Error::InvalidBitcoinNetwork { .. })
+            ));
+        }
+        for (network, expected) in [
+            ("mainnet", BitcoinNetwork::Mainnet),
+            ("regtest", BitcoinNetwork::Regtest),
+            ("signet", BitcoinNetwork::Signet),
+            ("testnet", BitcoinNetwork::Testnet),
+            ("testnet4", BitcoinNetwork::Testnet4),
+        ] {
+            let cfg = Config {
+                network: network.into(),
+                ..Default::default()
+            };
+            assert_eq!(cfg.net().unwrap(), expected);
+        }
     }
 }

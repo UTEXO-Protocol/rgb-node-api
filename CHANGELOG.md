@@ -3,6 +3,33 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased] — local Fireblocks/RGB POC
+
+### API compatibility
+
+- `/wallet/sendbegin` requires `expiration_timestamp`, a future absolute Unix
+  timestamp copied from the recipient invoice (earliest expiry for a batch),
+  representable as a signed 64-bit value. Clients that previously omitted it
+  must supply it; no arbitrary default is inferred.
+- `/wallet/blindreceive` uses a one-hour expiry when `duration_seconds` is omitted
+  or `null`. Neither means an unlimited invoice. Explicit durations are converted
+  to absolute timestamps. These behaviors accompany the current pinned RGB API;
+  see Swagger for request fields.
+
+### Fixed
+
+- Internal MPC wallets now run under independent locks with a bounded open-wallet
+  cache. Broken registration records no longer stop healthy wallet refreshes.
+- New interrupted invoice/send intents can recover the same saved operation when
+  its identity is unambiguous. Dynamic return cancellation is restricted to
+  verified unsubmitted batches; unknown submissions remain blocked.
+- Outgoing MPC history reports the recipient amount instead of wallet change;
+  incoming history continues to report validated allocations.
+- The legacy Vault helper requires the exact Iris transport endpoint, while
+  preserving per-invoice nonce parameters.
+
+The sibling `rgb-lib` Cargo path patch is intentionally retained for this POC.
+
 ## [0.2.0] - 2026-08-03
 
 ### Breaking

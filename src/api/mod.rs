@@ -4,22 +4,28 @@ use actix_web::Scope;
 use actix_web::web::{Data, get, post, resource, scope};
 use tokio_util::sync::CancellationToken;
 
+mod mpc_api;
 mod node_api;
 mod swagger;
 
 #[derive(Clone)]
 pub struct WalletSrv {
     pub ctx: WalletCtx,
+    pub mpc: crate::mpc::MpcService,
 }
 
 impl WalletSrv {
-    pub fn spawn_jobs(&self, cancel: CancellationToken) {
+    pub fn spawn_jobs(&self, cancel: CancellationToken) -> tokio::task::JoinHandle<()> {
+        let mpc = self.mpc.clone();
+        let mpc_cancel = cancel.clone();
+        let mpc_task = tokio::spawn(async move { mpc.refresh_task(mpc_cancel).await });
         // This task don't have any persistent state.
         // So, we don't care about gracefull shutdown of this task.
         let ctx = self.ctx.clone();
 
         log::info!("refresh wallet state");
         tokio::spawn(async move { ctx.refresh_task(cancel).await });
+        mpc_task
     }
 }
 
@@ -31,6 +37,7 @@ impl ApiService for WalletSrv {
     fn service(&self) -> Scope {
         scope("")
             .app_data(Data::new(self.ctx.clone()))
+            .service(mpc_api::scope(self.mpc.clone()))
             .service(resource("/healthcheck").route(get().to(healthcheck)))
             .service(resource("/version").route(get().to(version)))
             .service(resource("/_swagger").route(get().to(swagger::ui)))

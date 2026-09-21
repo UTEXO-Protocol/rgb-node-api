@@ -1573,14 +1573,18 @@ components:
           type: integer
           title: Duration Seconds
           description: >-
-            How long the invoice stays valid, in seconds from now. Send `null`
-            for an invoice that never expires.
+            How long the invoice stays valid, in seconds from now. Omitted or
+            null values use 3600 seconds. Unbounded invoices are not supported.
           default: 3600
       type: object
       title: RgbInvoiceRequestModel
       description: Request model for RGB invoices.
     SendAssetBeginRequestModel:
       properties:
+        expiration_timestamp:
+          type: integer
+          minimum: 1
+          description: Absolute Unix expiry from the recipient invoice; earliest expiry for a batch.
         recipient_map:
           additionalProperties:
             items:
@@ -1603,6 +1607,7 @@ components:
       type: object
       required:
         - recipient_map
+        - expiration_timestamp
       title: SendAssetBeginRequestModel
     SendAssetEndRequestModel:
       properties:
