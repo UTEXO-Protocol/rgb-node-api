@@ -347,6 +347,48 @@ fn two_role_receive_send_twice_restart_and_spend_vanilla() {
             .is_err()
         );
         drop(service);
+        if round == 0 {
+            // Restart with the original PSBT missing: a prepared RGB send must
+            // still hold its fee inputs, without lazily adopting that file.
+            let dir = receiver_dir.path().join(format!("mpc/wallets/{id}"));
+            let mut data = wallet_data(&dir);
+            data.reuse_addresses = true;
+            let mut wallet = MpcWallet::new(
+                data,
+                id.to_string(),
+                Box::new(
+                    RegistryProvider::new(BitcoinNetwork::Regtest, registration.addresses.clone())
+                        .unwrap(),
+                ),
+            )
+            .unwrap();
+            let online = wallet.go_online(options.clone()).unwrap();
+            let pending = wallet
+                .list_transfers(
+                    rgb_lib::wallet::AssetFilter::Id(asset.asset_id.clone()),
+                    None,
+                )
+                .unwrap()
+                .into_iter()
+                .find(|t| Some(t.batch_transfer_idx) == prepared.batch_transfer_idx)
+                .unwrap();
+            let psbt_path = pending.psbt_path.unwrap();
+            let saved_psbt = std::fs::read(&psbt_path).unwrap();
+            std::fs::remove_file(&psbt_path).unwrap();
+            let conflicting_spend = wallet.send_btc_begin(
+                online,
+                bitcoin.mining_address.clone(),
+                10_000,
+                2,
+                true,
+                true,
+            );
+            std::fs::write(&psbt_path, saved_psbt).unwrap();
+            assert!(matches!(
+                conflicting_spend,
+                Err(rgb_lib::Error::InsufficientBitcoins { .. })
+            ));
+        }
         let path = receiver_dir
             .path()
             .join(format!("mpc/sends/{id}/{}.json", request.request_id));
@@ -561,6 +603,6 @@ fn two_role_receive_send_twice_restart_and_spend_vanilla() {
         }
     }
     println!(
-        "DFNS_REGTEST_RESULT: witness receive=100, two two-key RGB sends=25+25, remaining RGB=50, vanilla BTC spend=10000 sat; unrelated allocation retained when first contract exhausted; final all-asset send omits colored carrier; prepare/submit restart recovered; no provider calls"
+        "DFNS_REGTEST_RESULT: witness receive=100, two two-key RGB sends=25+25, remaining RGB=50, vanilla BTC spend=10000 sat; unrelated allocation retained when first contract exhausted; final all-asset send omits colored carrier; prepare/submit restart recovered; missing original PSBT preserves prepared fee reservations; no provider calls"
     );
 }
