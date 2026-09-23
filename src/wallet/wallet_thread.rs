@@ -349,7 +349,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                 .lock()
                 .unwrap()
                 .wallet
-                .list_transfers(wallet::AssetFilter::Any, None)
+                .list_transfers(wallet::AssetFilter::AnyOrNone, None)
             {
                 Ok(val) => resp.send(Ok(val)).is_ok(),
                 Err(err) => {
@@ -382,7 +382,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                 .lock()
                 .unwrap()
                 .wallet
-                .list_transfers(wallet::AssetFilter::Any, None)
+                .list_transfers(wallet::AssetFilter::AnyOrNone, None)
                 .map(|transfers| {
                     transfers
                         .into_iter()
@@ -536,7 +536,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                 req.donation,
                 req.fee_rate,
                 req.min_confirmations,
-                None,
+                req.expiration_timestamp,
                 false,
                 None,
             ) {

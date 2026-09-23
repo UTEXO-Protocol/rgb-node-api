@@ -122,10 +122,59 @@ impl From<SendRecipient> for rgb_lib::wallet::Recipient {
 #[derive(serde::Deserialize)]
 pub struct SendBeginReq {
     pub recipient_map: std::collections::HashMap<String, Vec<SendRecipient>>,
+    /// Absolute Unix deadline from the recipient invoice (earliest for a batch).
+    /// Required by the pinned RGB protocol; an arbitrary default can outlive the invoice.
+    pub expiration_timestamp: u64,
     #[serde(default)]
     pub donation: bool,
     #[serde(default = "default_fee_rate")]
     pub fee_rate: u64,
     #[serde(default = "default_min_confirmations")]
     pub min_confirmations: u8,
+}
+
+impl SendBeginReq {
+    pub fn validate_expiration(&self) -> Result<(), rgb_lib::Error> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| rgb_lib::Error::InvalidExpiration)?
+            .as_secs();
+        if self.expiration_timestamp <= now || self.expiration_timestamp > i64::MAX as u64 {
+            return Err(rgb_lib::Error::InvalidExpiration);
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod expiration_tests {
+    use super::*;
+
+    #[test]
+    fn send_requires_a_future_representable_invoice_deadline() {
+        assert!(
+            serde_json::from_value::<SendBeginReq>(serde_json::json!({ "recipient_map": {} }))
+                .is_err()
+        );
+        for deadline in [0, 1, u64::MAX] {
+            let request: SendBeginReq = serde_json::from_value(
+                serde_json::json!({ "recipient_map": {}, "expiration_timestamp": deadline }),
+            )
+            .unwrap();
+            assert!(matches!(
+                request.validate_expiration(),
+                Err(rgb_lib::Error::InvalidExpiration)
+            ));
+        }
+        let deadline = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + 3600;
+        let request: SendBeginReq = serde_json::from_value(
+            serde_json::json!({ "recipient_map": {}, "expiration_timestamp": deadline }),
+        )
+        .unwrap();
+        assert!(request.validate_expiration().is_ok());
+    }
 }

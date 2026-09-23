@@ -1,0 +1,11 @@
+target
+.git
+.cargo/config.toml
+dfns-data
+rgb-data
+config.dfns.local.toml
+.env*
+**/*.pem
+**/*.token
+**/*.sqlite*
+**/*.log

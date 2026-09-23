@@ -13,6 +13,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+  GIT_TERMINAL_PROMPT: "0"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -22,27 +23,37 @@ jobs:
   lint:
     name: rustfmt + clippy
     runs-on: ubuntu-latest
+    env:
+      BFA_MIRRORS_TOKEN: ${{ secrets.BFA_MIRRORS_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+      - name: Configure private Git dependency access
+        run: |
+          test -n "$BFA_MIRRORS_TOKEN" || { echo "BFA_MIRRORS_TOKEN needs read access to the RGB Git mirrors" >&2; exit 1; }
+          echo "GIT_ASKPASS=$GITHUB_WORKSPACE/.github/scripts/git-askpass.sh" >> "$GITHUB_ENV"
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           components: rustfmt, clippy
           cache: true
-      # rgb-lib is declared as an ssh:// git dependency but the repo is public,
-      # so rewrite to anonymous HTTPS to fetch it without any SSH key/secret.
       - name: Configure git for cargo git deps
         run: git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
       - name: cargo fmt --check
         run: cargo fmt --all -- --check
       - name: cargo clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
 
   check-and-test:
     name: cargo check + test
     runs-on: ubuntu-latest
+    env:
+      BFA_MIRRORS_TOKEN: ${{ secrets.BFA_MIRRORS_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+      - name: Configure private Git dependency access
+        run: |
+          test -n "$BFA_MIRRORS_TOKEN" || { echo "BFA_MIRRORS_TOKEN needs read access to the RGB Git mirrors" >&2; exit 1; }
+          echo "GIT_ASKPASS=$GITHUB_WORKSPACE/.github/scripts/git-askpass.sh" >> "$GITHUB_ENV"
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
@@ -50,9 +61,9 @@ jobs:
       - name: Configure git for cargo git deps
         run: git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
       - name: cargo check
-        run: cargo check --all-targets
+        run: cargo check --locked --workspace --all-targets
       - name: cargo test
-        run: cargo test --all-targets
+        run: cargo test --locked --workspace --all-targets
 
   docker:
     name: build + push image
@@ -102,5 +113,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          secrets: |
+            bfa_mirrors_token=${{ secrets.BFA_MIRRORS_TOKEN }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

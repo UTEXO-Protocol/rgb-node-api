@@ -64,7 +64,7 @@ impl FromRequest for XWalletKey {
 /// get a 4xx with the rgb-lib message and a `kind` detail holding the variant
 /// name, so clients can react without parsing prose. Only genuine server-side
 /// failures stay a 500 with an opaque message.
-fn map_rgb_error(err: rgb_lib::Error) -> ApiError {
+pub(super) fn map_rgb_error(err: rgb_lib::Error) -> ApiError {
     let class = classify(&err);
     let kind = error_kind(&err);
 

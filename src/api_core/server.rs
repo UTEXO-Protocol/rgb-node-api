@@ -115,10 +115,7 @@ where
                 config.enable_cors,
                 cors(&config.cors_domain, &config.allowed_headers),
             ))
-            .wrap(
-                middleware::DefaultHeaders::new()
-                    .add((header::CACHE_CONTROL, "public, max-age=10")),
-            )
+            .wrap(middleware::DefaultHeaders::new().add((header::CACHE_CONTROL, "no-store")))
             .wrap_fn(|req, srv| {
                 let fut = srv.call(req);
                 async {

@@ -66,6 +66,25 @@ pub fn error_kind(err: &Error) -> String {
 /// silently landing in some catch-all bucket.
 pub fn classify(err: &Error) -> ErrorClass {
     match err {
+        Error::PsbtOperationNotFound { .. } => ErrorClass::NotFound,
+        Error::BatchTransferAlreadyExists { .. }
+        | Error::CannotProvideOutOfBandAck { .. }
+        | Error::CannotProvideOutOfBandConsignment { .. }
+        | Error::InsufficientConfirmations { .. }
+        | Error::InvalidPsbtOperationStatus { .. }
+        | Error::WalletSettingMismatch { .. }
+        | Error::UnexpectedTransfer { .. }
+        | Error::UnsafeTransferHistory { .. } => ErrorClass::Conflict,
+        Error::InexistentWalletManifest { .. } => ErrorClass::Internal,
+        Error::UnsupportedBridge { .. }
+        | Error::UnsupportedWalletManifestVersion { .. } => ErrorClass::Unsupported,
+        Error::InvalidEthRpcUrl { .. }
+        | Error::InvalidBurnRecipient { .. }
+        | Error::MissingBurnRecipient
+        | Error::NoBridgeRights
+        | Error::NoMaxAllocationsPerUtxo
+        | Error::WitnessOutputMismatch { .. } => ErrorClass::BadInput,
+
         // -- the entity asked for does not exist -----------------------------
         Error::AssetNotFound { .. }
         | Error::BatchTransferNotFound { .. }
