@@ -17,6 +17,9 @@ Unavailable BTC is `null`; no confirmed/pending classification is added.
 
 The MPC POC currently uses the sibling `../rgb-lib` checkout via an explicit Cargo
 patch. Keep both repositories together; the baseline git pin remains in Cargo.toml.
+CI checks out the library commit pinned by `RGB_LIB_REV` in its workflow and requires
+the `BFA_MIRRORS_TOKEN` Actions secret with read access to the three private BFA
+mirrors. Replace the local Cargo override before a standalone Docker release.
 
 ## Running
 
