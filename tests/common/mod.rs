@@ -30,6 +30,9 @@ pub fn config(directory: &std::path::Path) -> Config {
     }
 }
 pub fn registration(seed: u8) -> Registration {
+    registration_for_network(seed, BitcoinNetwork::Regtest)
+}
+pub fn registration_for_network(seed: u8, network: BitcoinNetwork) -> Registration {
     let addresses = [Role::Rgb, Role::Fee]
         .into_iter()
         .enumerate()
@@ -40,7 +43,7 @@ pub fn registration(seed: u8) -> Registration {
             RegisteredAddress {
                 role,
                 script_type: ScriptType::P2wpkh,
-                address: Address::p2wpkh(&public, Network::Regtest).to_string(),
+                address: Address::p2wpkh(&public, Network::from(network)).to_string(),
                 public_key: public.to_string(),
                 signing_key_id: format!("fixture-{seed}-{i}"),
             }
@@ -51,8 +54,8 @@ pub fn registration(seed: u8) -> Registration {
         provider: Provider::FireblocksVault,
         provider_environment: "fixture-environment".into(),
         provider_wallet_ref: format!("fixture-wallet-{seed}"),
-        bitcoin_network: "regtest".into(),
-        genesis_hash: genesis_block(Network::from(BitcoinNetwork::Regtest))
+        bitcoin_network: network.to_string().to_ascii_lowercase(),
+        genesis_hash: genesis_block(Network::from(network))
             .block_hash()
             .to_string(),
         addresses,

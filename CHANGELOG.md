@@ -18,10 +18,31 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- External-wallet send limits are configurable under `wallet.mpc_send`; invoice and
+  address checks use the configured Bitcoin network, including mainnet.
+  Send journals retain their original policy across restarts/configuration
+  changes; old journals retain the previous defaults.
+- Removed the MPC restriction to test networks. Configuration supports mainnet,
+  testnet (Testnet3), testnet4, signet and regtest; `testnet3` is an alias for
+  `testnet`. Registration network names are normalized without changing the
+  legacy `testnet` wire value. Invalid network names still fail closed.
+- MPC state is pinned to its network/genesis under the existing process lock.
+  Legacy state is adopted only after checking existing registration chains;
+  starting the same state directory with another network is rejected.
+- MPC wallet capabilities report configured schemas, including BFA when enabled,
+  instead of always advertising NIA only.
+- Provider identifiers are extensible without adding enum cases or HTTP routes;
+  existing `dynamic_embedded` and `fireblocks_vault` wire values are preserved.
+  Send eligibility is derived from the registered wallet shape, not the provider
+  name. Additive `external_send` capabilities report `p2wpkh_blind` or `null`.
+- Regression coverage exercises fresh wallets under three provider identifiers
+  (Dynamic, Vault and a newly generated adapter name) with a new asset,
+  cancellation, interrupted preparation recovery, external signatures and an
+  ordinary native wallet receive on isolated regtest.
 - Internal MPC wallets now run under independent locks with a bounded open-wallet
   cache. Broken registration records no longer stop healthy wallet refreshes.
 - New interrupted invoice/send intents can recover the same saved operation when
-  its identity is unambiguous. Dynamic return cancellation is restricted to
+  its identity is unambiguous. External-send cancellation is restricted to
   verified unsubmitted batches; unknown submissions remain blocked.
 - Outgoing MPC history reports the recipient amount instead of wallet change;
   incoming history continues to report validated allocations.

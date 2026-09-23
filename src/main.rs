@@ -31,6 +31,7 @@ async fn main() -> anyhow::Result<()> {
     let contents = std::fs::read_to_string(args.config)?;
     let cfg: Config = toml::from_str(&contents)?;
     cfg.wallet.net()?;
+    cfg.wallet.supported_schemas()?;
 
     let tasker = TaskTracker::new();
     let cancel = CancellationToken::new();

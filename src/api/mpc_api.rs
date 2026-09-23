@@ -1,5 +1,5 @@
-// DYNAMIC_EMBEDDED_POC: only SendRequest/SendView, /sends routes and send handlers are Dynamic-only.
-// Registration, witness invoices, refresh and ownership checks are shared with Vault.
+// DYNAMIC_EMBEDDED_POC: shared registry/receive/send routes. Retain for other
+// providers; authentication and SDK signing belong in their Gateway adapters.
 use crate::{
     api_core::api_errors::{ApiError, ApiErrorCode, error_with, internal_server_error},
     mpc::{
@@ -88,7 +88,7 @@ pub(super) fn scope(service: MpcService) -> Scope {
         .route("/wallets/{wallet_id}/assets", web::get().to(assets))
         .route("/wallets/{wallet_id}/transfers", web::get().to(transfers))
         .route("/wallets/{wallet_id}/refresh", web::post().to(refresh))
-        // DYNAMIC_EMBEDDED_POC BEGIN: return transaction routes.
+        // DYNAMIC_EMBEDDED_POC: shared external-send routes; retain for other providers.
         .route(
             "/wallets/{wallet_id}/sends/prepare",
             web::post().to(prepare_send),
@@ -105,10 +105,9 @@ pub(super) fn scope(service: MpcService) -> Scope {
             "/wallets/{wallet_id}/sends/{request_id}/cancel",
             web::post().to(cancel_send),
         )
-    // DYNAMIC_EMBEDDED_POC END
 }
 
-// DYNAMIC_EMBEDDED_POC BEGIN: constrained return handlers.
+// DYNAMIC_EMBEDDED_POC: shared external-send handlers; retain for other providers.
 async fn prepare_send(
     service: Data<MpcService>,
     GatewayCaller(owner): GatewayCaller,
@@ -177,8 +176,6 @@ async fn send_status(
     ))
 }
 
-// DYNAMIC_EMBEDDED_POC END
-
 async fn register(
     service: Data<MpcService>,
     GatewayCaller(owner): GatewayCaller,
@@ -221,23 +218,40 @@ async fn assets(
     GatewayCaller(owner): GatewayCaller,
     id: Path<String>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let assets = service
-        .assets(owner, wallet_id(id)?)
+    let (assets, btc_balance) = service
+        .asset_snapshot(owner, wallet_id(id)?)
         .await
         .map_err(map_error)?;
-    let assets: Vec<_> = assets
-        .nia
-        .unwrap_or_default()
-        .into_iter()
-        .map(|asset| {
-            serde_json::json!({
-                "asset_id":asset.asset_id, "schema":"nia", "ticker":asset.ticker, "name":asset.name,
-                "precision":asset.precision, "balance": balance_view(&asset.balance)
-            })
-        })
-        .collect();
-    Ok(Json(serde_json::json!({"assets":assets})))
+    let mut view = asset_list_view(assets);
+    view["btc_balance"] = btc_balance
+        .as_ref()
+        .map(btc_balance_view)
+        .unwrap_or(serde_json::Value::Null);
+    Ok(Json(view))
 }
+fn btc_balance_view(balance: &rgb_lib::wallet::BtcBalance) -> serde_json::Value {
+    // Preserve rgb-lib's BtcBalance contract; only encode u64 values as strings.
+    serde_json::json!({
+        "colored": balance_view(&balance.colored),
+        "vanilla": balance_view(&balance.vanilla),
+    })
+}
+fn asset_list_view(assets: rgb_lib::wallet::Assets) -> serde_json::Value {
+    let nia = assets.nia.unwrap_or_default().into_iter().map(|asset| {
+        serde_json::json!({
+            "asset_id": asset.asset_id, "schema": "nia", "ticker": asset.ticker, "name": asset.name,
+            "precision": asset.precision, "balance": balance_view(&asset.balance)
+        })
+    });
+    let bfa = assets.bfa.unwrap_or_default().into_iter().map(|asset| {
+        serde_json::json!({
+            "asset_id": asset.asset_id, "schema": "bfa", "ticker": asset.ticker, "name": asset.name,
+            "precision": asset.precision, "balance": balance_view(&asset.balance)
+        })
+    });
+    serde_json::json!({"assets": nia.chain(bfa).collect::<Vec<_>>()})
+}
+
 fn balance_view(balance: &rgb_lib::wallet::Balance) -> serde_json::Value {
     serde_json::json!({"settled":balance.settled.to_string(), "future":balance.future.to_string(), "spendable":balance.spendable.to_string()})
 }
@@ -311,6 +325,47 @@ async fn refresh(
 mod tests {
     use super::*;
     use actix_web::{App, test};
+
+    #[actix_web::test]
+    async fn btc_balances_preserve_native_fields_and_exact_satoshis() {
+        use rgb_lib::wallet::{Balance, BtcBalance};
+        let value = btc_balance_view(&BtcBalance {
+            colored: Balance {
+                settled: 5000,
+                future: 6000,
+                spendable: 4000,
+            },
+            vanilla: Balance {
+                settled: 9007199254740993,
+                future: 200,
+                spendable: 100,
+            },
+        });
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "colored": {"settled": "5000", "future": "6000", "spendable": "4000"},
+                "vanilla": {"settled": "9007199254740993", "future": "200", "spendable": "100"},
+            })
+        );
+    }
+
+    #[actix_web::test]
+    async fn bfa_balances_are_exposed_with_schema_and_exact_decimal_strings() {
+        let asset = serde_json::json!({
+            "asset_id":"bfa-fixture", "ticker":"BFAMOCK", "name":"Mock BFA", "details":null,
+            "precision":0, "initial_supply":0, "timestamp":0, "added_at":0, "media":null, "reject_list_url":null,
+            "balance":{"settled":9007199254740993u64,"future":9007199254740993u64,"spendable":17}
+        });
+        let assets: rgb_lib::wallet::Assets = serde_json::from_value(serde_json::json!({
+            "nia":[], "bfa":[asset], "cfa":null, "uda":null, "ifa":null
+        }))
+        .unwrap();
+        let view = asset_list_view(assets);
+        assert_eq!(view["assets"][0]["schema"], "bfa");
+        assert_eq!(view["assets"][0]["balance"]["settled"], "9007199254740993");
+        assert_eq!(view["assets"][0]["balance"]["spendable"], "17");
+    }
 
     #[actix_web::test]
     async fn internal_routes_require_a_service_token_and_gateway_identity() {

@@ -1,4 +1,4 @@
-//! Offline, public-key-only checks for this POC's Testnet3 split and NIA payout.
+//! Offline, public-key-only checks for Testnet3 source funding, payouts and BFA mint.
 //! JSON stdin: headers, unspents, psbt, optionally original_psbt. No network I/O.
 use std::{collections::HashMap, io::Read, str::FromStr};
 
@@ -75,7 +75,21 @@ fn poc_allocations_match(allocations: &[Value], asset: &Value, allow_empty: bool
 
 fn inspect(value: &Value) -> Result<Value> {
     let payout = value.get("transfer");
-    let recipient_script = if let Some(payout) = payout {
+    let mint = value.get("mint");
+    let funding = value.get("btc_funding");
+    ensure!(
+        [payout, mint, funding]
+            .iter()
+            .filter(|v| v.is_some())
+            .count()
+            <= 1,
+        "Ambiguous source operation"
+    );
+    let rgb = payout.is_some() || mint.is_some();
+    // Direct mock mint uses the same pinned invoice/address check as a payout.
+    // The historical self-mint has no external recipient and stays strict.
+    let destination = payout.or_else(|| mint.filter(|mint| mint.get("invoice").is_some()));
+    let recipient_script = if let Some(payout) = destination {
         let decoded = invoice(payout)?;
         let expected = Address::from_str(
             payout["recipient_address"]
@@ -94,6 +108,20 @@ fn inspect(value: &Value) -> Result<Value> {
             "Invoice and registered address disagree"
         );
         Some(expected)
+    } else if let Some(funding) = funding {
+        ensure!(
+            funding["amount_sat"] == 5000,
+            "Funding amount must be 5000 sat"
+        );
+        Some(
+            Address::from_str(
+                funding["recipient_address"]
+                    .as_str()
+                    .context("Missing recipient")?,
+            )?
+            .require_network(Network::Testnet)?
+            .script_pubkey(),
+        )
     } else {
         None
     };
@@ -127,6 +155,12 @@ fn inspect(value: &Value) -> Result<Value> {
         }
     }
     let psbt = Psbt::from_str(value["psbt"].as_str().context("Missing PSBT")?)?;
+    if let Some(script) = &recipient_script {
+        ensure!(
+            funding.is_none() || !scripts.contains_key(script),
+            "Funding recipient must be external"
+        );
+    }
     let mut input_total = 0u64;
     let mut prevouts = Vec::new();
     let mut rgb_input_count = 0;
@@ -135,18 +169,26 @@ fn inspect(value: &Value) -> Result<Value> {
         let previous = metadata.witness_utxo.as_ref().context("Missing prevout")?;
         let role = scripts.get(&previous.script_pubkey);
         ensure!(
-            role == Some(&"van") || (payout.is_some() && role == Some(&"col")),
+            role == Some(&"van") || (rgb && role == Some(&"col")),
             "Input is not source BTC"
         );
         ensure!(
             unspents.iter().any(|u| {
-                u["utxo"]["outpoint"]["txid"] == input.previous_output.txid.to_string()
+                ((mint.is_none() && funding.is_none())
+                    || (u["utxo"]["exists"] == true && u["pending_blinded"] == 0))
+                    && u["utxo"]["outpoint"]["txid"] == input.previous_output.txid.to_string()
                     && u["utxo"]["outpoint"]["vout"] == input.previous_output.vout
                     && u["utxo"]["btc_amount"] == previous.value.to_sat()
                     && if role == Some(&"col") {
                         u["utxo"]["colorable"] == true
                             && u["rgb_allocations"].as_array().is_some_and(|a| {
-                                if value["transfer"]["poc"] == true {
+                                if let Some(mint) = mint {
+                                    a.iter().all(|allocation| {
+                                        allocation["asset_id"] == mint["asset_id"]
+                                            && allocation["settled"] == true
+                                            && allocation["assignment"] == "BridgeRight"
+                                    })
+                                } else if value["transfer"]["poc"] == true {
                                     poc_allocations_match(
                                         a,
                                         &value["transfer"]["asset_id"],
@@ -190,9 +232,12 @@ fn inspect(value: &Value) -> Result<Value> {
     let mut commitment_count = 0;
     for (vout, output) in psbt.unsigned_tx.output.iter().enumerate() {
         if recipient_script.as_ref() == Some(&output.script_pubkey) {
-            ensure!(output.value.to_sat() == 1000, "Wrong recipient BTC amount");
+            ensure!(
+                output.value.to_sat() == if funding.is_some() { 5000 } else { 1000 },
+                "Wrong recipient BTC amount"
+            );
             recipient_count += 1;
-        } else if payout.is_some() && output.script_pubkey.is_op_return() {
+        } else if rgb && output.script_pubkey.is_op_return() {
             ensure!(
                 output.value.to_sat() == 0 && output.script_pubkey.len() <= 83,
                 "Unexpected commitment output"
@@ -202,7 +247,7 @@ fn inspect(value: &Value) -> Result<Value> {
             match scripts.get(&output.script_pubkey) {
                 Some(&"col") => {
                     ensure!(
-                        payout.is_some() || output.value.to_sat() == 5000,
+                        rgb || output.value.to_sat() == 5000,
                         "Wrong allocation UTXO size"
                     );
                     colored.push(json!({"vout":vout, "btcAmountSat":output.value.to_sat()}));
@@ -215,7 +260,15 @@ fn inspect(value: &Value) -> Result<Value> {
             .checked_add(output.value.to_sat())
             .context("Output overflow")?;
     }
-    if payout.is_some() {
+    if mint.is_some() {
+        ensure!(
+            rgb_input_count >= 1
+                && recipient_count == usize::from(recipient_script.is_some())
+                && commitment_count == 1
+                && !colored.is_empty(),
+            "Mint must spend its own bridge right, retain a source output and fund only its pinned recipient"
+        );
+    } else if payout.is_some() {
         ensure!(
             (if value["transfer"]["poc"] == true {
                 rgb_input_count >= 1
@@ -225,18 +278,33 @@ fn inspect(value: &Value) -> Result<Value> {
                 && commitment_count == 1,
             "Expected one 200-NIA input, one recipient and one RGB commitment"
         );
-    } else {
+    } else if funding.is_some() {
         ensure!(
-            colored.len() == 5 && vanilla_count == 1,
-            "Expected five allocation outputs and change"
+            recipient_count == 1
+                && vanilla_count == 1
+                && colored.is_empty()
+                && commitment_count == 0
+                && rgb_input_count == 0,
+            "Funding requires one recipient, own vanilla change and no RGB inputs/outputs"
+        );
+    } else {
+        let allocation_count = match value.get("allocation_count") {
+            None => 5,
+            Some(count) => count.as_u64().context("Invalid allocation output count")?,
+        };
+        ensure!(
+            (1..=5).contains(&allocation_count)
+                && colored.len() as u64 == allocation_count
+                && vanilla_count == 1,
+            "Expected the saved allocation output count and own change"
         );
     }
     let fee = input_total
         .checked_sub(output_total)
         .context("Outputs exceed inputs")?;
     ensure!(
-        (1..=2000).contains(&fee),
-        "Fee exceeds this POC's 2000 sat limit"
+        (1..=if funding.is_some() { 1000 } else { 2000 }).contains(&fee),
+        "Fee exceeds the operation's POC limit"
     );
     let mut verified_signatures = 0;
     if let Some(original) = value["original_psbt"].as_str() {
@@ -359,6 +427,202 @@ mod tests {
         });
         json!({"headers":{"xpub-van":vanilla.to_string(), "xpub-col":colored.to_string()},
             "psbt":psbt.to_string(), "unspents":[{"utxo":{"outpoint":{"txid":OutPoint::null().txid.to_string(),"vout":u32::MAX},"btc_amount":100000,"colorable":false},"rgb_allocations":[]}]})
+    }
+
+    #[test]
+    fn btc_funding_pins_recipient_amount_and_preserves_rgb_inputs() {
+        let mut value = fixture();
+        let mut psbt = Psbt::from_str(value["psbt"].as_str().unwrap()).unwrap();
+        let secp = Secp256k1::new();
+        let external = Xpub::from_priv(
+            &secp,
+            &Xpriv::new_master(Network::Testnet, &[9; 32]).unwrap(),
+        );
+        let address = Address::p2tr(
+            &secp,
+            external.public_key.x_only_public_key().0,
+            None,
+            Network::Testnet,
+        );
+        let mut change = psbt.unsigned_tx.output.last().unwrap().clone();
+        change.value = Amount::from_sat(94_000);
+        psbt.unsigned_tx.output = vec![
+            TxOut {
+                value: Amount::from_sat(5000),
+                script_pubkey: address.script_pubkey(),
+            },
+            change,
+        ];
+        psbt.outputs = vec![Default::default(); 2];
+        value["psbt"] = json!(psbt.to_string());
+        value["btc_funding"] =
+            json!({"recipient_address": address.to_string(), "amount_sat": 5000});
+        value["unspents"][0]["utxo"]["exists"] = json!(true);
+        value["unspents"][0]["pending_blinded"] = json!(0);
+        let result = inspect(&value).unwrap();
+        assert_eq!(result["feeSat"], 1000);
+        assert_eq!(result["recipientOutputs"], 1);
+        assert_eq!(result["rgbInputs"], 0);
+        for (field, replacement) in [
+            ("amount_sat", json!(5001)),
+            ("recipient_address", json!("bc1invalid")),
+        ] {
+            let mut wrong = value.clone();
+            wrong["btc_funding"][field] = replacement;
+            assert!(inspect(&wrong).is_err());
+        }
+        let mut wrong = value.clone();
+        wrong["unspents"][0]["rgb_allocations"] = json!([{"assignment":"BridgeRight"}]);
+        assert!(inspect(&wrong).is_err());
+        let mut wrong = value.clone();
+        wrong["mint"] = json!({});
+        assert!(inspect(&wrong).is_err());
+        for excess_fee in [false, true] {
+            let mut wrong_psbt = psbt.clone();
+            if excess_fee {
+                wrong_psbt.unsigned_tx.output[1].value -= Amount::ONE_SAT;
+            } else {
+                wrong_psbt.unsigned_tx.output[0].script_pubkey =
+                    wrong_psbt.unsigned_tx.output[1].script_pubkey.clone();
+            }
+            let mut wrong = value.clone();
+            wrong["psbt"] = json!(wrong_psbt.to_string());
+            assert!(inspect(&wrong).is_err());
+        }
+    }
+
+    #[test]
+    fn source_preparation_pins_a_bounded_output_count_without_changing_legacy_defaults() {
+        let mut value = fixture();
+        let mut psbt = Psbt::from_str(value["psbt"].as_str().unwrap()).unwrap();
+        psbt.unsigned_tx.output.drain(1..5);
+        psbt.outputs.drain(1..5);
+        psbt.unsigned_tx.output.last_mut().unwrap().value += Amount::from_sat(20000);
+        value["psbt"] = json!(psbt.to_string());
+        assert!(inspect(&value).is_err());
+        value["allocation_count"] = json!(1);
+        assert!(inspect(&value).is_ok());
+        for count in [0, 2, 6] {
+            value["allocation_count"] = json!(count);
+            assert!(inspect(&value).is_err());
+        }
+    }
+
+    #[test]
+    fn mock_mint_spends_only_its_bridge_right_and_keeps_all_btc_at_the_source() {
+        let mut value = fixture();
+        let mut psbt = Psbt::from_str(value["psbt"].as_str().unwrap()).unwrap();
+        let mut change = psbt.unsigned_tx.output[0].clone();
+        psbt.inputs[0].witness_utxo = Some(change.clone());
+        change.value = Amount::from_sat(4500);
+        psbt.unsigned_tx.output = vec![
+            TxOut {
+                value: Amount::ZERO,
+                script_pubkey: ScriptBuf::new_op_return([1u8; 32]),
+            },
+            change,
+        ];
+        psbt.outputs = vec![Default::default(); 2];
+        value["psbt"] = json!(psbt.to_string());
+        value["mint"] = json!({"asset_id": "bfa-fixture"});
+        value["unspents"][0]["utxo"]["colorable"] = json!(true);
+        value["unspents"][0]["utxo"]["exists"] = json!(true);
+        value["unspents"][0]["pending_blinded"] = json!(0);
+        value["unspents"][0]["utxo"]["btc_amount"] = json!(5000);
+        value["unspents"][0]["rgb_allocations"] =
+            json!([{"asset_id":"bfa-fixture", "assignment":"BridgeRight", "settled":true}]);
+        assert_eq!(inspect(&value).unwrap()["feeSat"], 500);
+        let mut altered = value.clone();
+        altered["unspents"][0]["pending_blinded"] = json!(1);
+        assert!(inspect(&altered).is_err());
+        let mut altered = value.clone();
+        altered["unspents"][0]["rgb_allocations"][0]["asset_id"] = json!("nia-fixture");
+        assert!(inspect(&altered).is_err());
+        let mut altered = value.clone();
+        altered["unspents"][0]["rgb_allocations"][0]["assignment"] = json!({"Fungible": 1000});
+        assert!(inspect(&altered).is_err());
+        psbt.unsigned_tx.output[1].script_pubkey = ScriptBuf::new();
+        value["psbt"] = json!(psbt.to_string());
+        assert!(inspect(&value).is_err());
+    }
+
+    #[test]
+    fn direct_mint_allows_only_the_pinned_witness_and_keeps_the_bridge_right_input() {
+        let mut value = fixture();
+        let mut psbt = Psbt::from_str(value["psbt"].as_str().unwrap()).unwrap();
+        let secp = Secp256k1::new();
+        let key = Xpriv::new_master(Network::Testnet, &[9; 32])
+            .unwrap()
+            .to_priv();
+        let address = Address::p2tr(
+            &secp,
+            key.public_key(&secp).inner.x_only_public_key().0,
+            None,
+            Network::Testnet,
+        );
+        let recipient = rgb_lib::utils::recipient_id_from_script_buf(
+            address.script_pubkey(),
+            BitcoinNetwork::Testnet,
+        );
+        let invoice = format!(
+            "rgb:~/~/de/{recipient}?assignment_name=assetOwner&expiry=2000000000&endpoints=rpcs://example.org/0.2/json-rpc?rid_nonce%3D7072af5a8d855853cc825408692bb869"
+        );
+        let mut change = psbt.unsigned_tx.output[0].clone();
+        psbt.inputs[0].witness_utxo = Some(change.clone());
+        change.value = Amount::from_sat(3500);
+        psbt.unsigned_tx.output = vec![
+            TxOut {
+                value: Amount::ZERO,
+                script_pubkey: ScriptBuf::new_op_return([1u8; 32]),
+            },
+            TxOut {
+                value: Amount::from_sat(1000),
+                script_pubkey: address.script_pubkey(),
+            },
+            change,
+        ];
+        psbt.outputs = vec![Default::default(); 3];
+        value["psbt"] = json!(psbt.to_string());
+        value["mint"] = json!({"poc":true, "asset_id":"bfa-fixture", "amount":"25", "invoice":invoice, "recipient_address":address.to_string()});
+        value["unspents"][0]["utxo"]["colorable"] = json!(true);
+        value["unspents"][0]["utxo"]["exists"] = json!(true);
+        value["unspents"][0]["pending_blinded"] = json!(0);
+        value["unspents"][0]["utxo"]["btc_amount"] = json!(5000);
+        value["unspents"][0]["rgb_allocations"] =
+            json!([{"asset_id":"bfa-fixture", "assignment":"BridgeRight", "settled":true}]);
+        let checked = inspect(&value).unwrap();
+        assert_eq!(checked["feeSat"], 500);
+        assert_eq!(checked["recipientOutputs"], 1);
+        let mut altered = value.clone();
+        altered["mint"]["amount"] = json!("24");
+        assert!(inspect(&altered).is_err());
+        let mut altered = value.clone();
+        altered["mint"]["recipient_address"] = json!(
+            Address::from_script(&psbt.unsigned_tx.output[2].script_pubkey, Network::Testnet)
+                .unwrap()
+                .to_string()
+        );
+        assert!(inspect(&altered).is_err());
+        let mut altered = value.clone();
+        altered["unspents"][0]["rgb_allocations"][0]["assignment"] = json!({"Fungible":25});
+        assert!(inspect(&altered).is_err());
+        for amount in [999, 1001] {
+            let mut altered = psbt.clone();
+            altered.unsigned_tx.output[1].value = Amount::from_sat(amount);
+            let mut input = value.clone();
+            input["psbt"] = json!(altered.to_string());
+            assert!(inspect(&input).is_err());
+        }
+        let mut altered = psbt.clone();
+        altered.unsigned_tx.output[1].script_pubkey = ScriptBuf::new();
+        let mut input = value.clone();
+        input["psbt"] = json!(altered.to_string());
+        assert!(inspect(&input).is_err());
+        let mut altered = psbt.clone();
+        altered.unsigned_tx.output[2] = altered.unsigned_tx.output[1].clone();
+        let mut input = value.clone();
+        input["psbt"] = json!(altered.to_string());
+        assert!(inspect(&input).is_err());
     }
 
     #[test]

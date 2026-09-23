@@ -73,6 +73,26 @@ pub struct IssueNiaReq {
     pub precision: u8,
 }
 
+/// Operator BFA genesis: allocates bridge rights, never a starting token supply.
+#[derive(Clone, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IssueBfaReq {
+    pub ticker: String,
+    pub name: String,
+    pub precision: u8,
+    pub bridge_rights: u8,
+    pub contract_address: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BridgeBeginReq {
+    pub asset_id: String,
+    pub recipient: SendRecipient,
+    pub fee_rate: u64,
+    pub min_confirmations: u8,
+}
+
 /// `CreateUtxosBegin` in the API spec.
 #[derive(serde::Deserialize)]
 pub struct CreateUtxoBeginReq {

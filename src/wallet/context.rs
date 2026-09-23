@@ -206,6 +206,31 @@ impl WalletCtx {
         self.send_cmd(cmd, recv).await
     }
 
+    pub async fn issue_bfa_token(
+        &self,
+        req: IssueBfaReq,
+    ) -> Result<rgb_lib::wallet::AssetBFA, rgb_lib::Error> {
+        let (resp, recv) = oneshot::channel();
+        self.send_cmd(WalletCmd::IssueBfaToken { req, resp }, recv)
+            .await
+    }
+    pub async fn bridge_begin(
+        &self,
+        req: BridgeBeginReq,
+    ) -> Result<rgb_lib::wallet::BridgeBeginResult, rgb_lib::Error> {
+        let (resp, recv) = oneshot::channel();
+        self.send_cmd(WalletCmd::BridgeBegin { req, resp }, recv)
+            .await
+    }
+    pub async fn bridge_end(
+        &self,
+        psbt: String,
+    ) -> Result<rgb_lib::wallet::OperationResult, rgb_lib::Error> {
+        let (resp, recv) = oneshot::channel();
+        self.send_cmd(WalletCmd::BridgeEnd { psbt, resp }, recv)
+            .await
+    }
+
     pub async fn issue_nia_token(
         &self,
         req: IssueNiaReq,

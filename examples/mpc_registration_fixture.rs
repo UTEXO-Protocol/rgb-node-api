@@ -1,4 +1,4 @@
-//! Prints public registration fixtures for the local regtest runbook.
+//! Prints unfunded public registration fixtures for the selected Bitcoin network.
 //! These are not real Dynamic or Fireblocks wallets.
 #[path = "../tests/common/mod.rs"]
 mod common;
@@ -16,7 +16,12 @@ fn main() -> anyhow::Result<()> {
         "Use vault or embedded"
     );
     let seed = if model == "vault" { 42 } else { 52 };
-    let mut registration = common::registration(seed);
+    let network = rgb_node_api::wallet::Config {
+        network: std::env::args().nth(2).unwrap_or_else(|| "regtest".into()),
+        ..Default::default()
+    }
+    .net()?;
+    let mut registration = common::registration_for_network(seed, network);
     registration.wallet_id = uuid::Uuid::from_u128(if model == "vault" { 1 } else { 2 });
     if model == "embedded" {
         registration.provider = Provider::DynamicEmbedded;
@@ -27,7 +32,7 @@ fn main() -> anyhow::Result<()> {
             address.public_key = output_key.to_string();
             address.address = Address::p2tr_tweaked(
                 TweakedPublicKey::dangerous_assume_tweaked(output_key),
-                Network::Regtest,
+                Network::from(network),
             )
             .to_string();
         }

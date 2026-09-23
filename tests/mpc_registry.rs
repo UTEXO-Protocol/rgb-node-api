@@ -4,6 +4,299 @@ use rgb_lib::{BitcoinNetwork, bdk_wallet::KeychainKind, mpc::MpcWalletProvider};
 use rgb_node_api::mpc::{MpcError, MpcService, Owner, Provider, RegistryProvider};
 
 #[tokio::test]
+async fn standard_networks_receive_reopen_and_reject_cross_chain_bindings() {
+    use rgb_lib::wallet::Invoice;
+    use rgb_node_api::mpc::{Role, SendProfile};
+    let networks = [
+        BitcoinNetwork::Mainnet,
+        BitcoinNetwork::Testnet,
+        BitcoinNetwork::Testnet4,
+        BitcoinNetwork::Signet,
+        BitcoinNetwork::Regtest,
+    ];
+    let shared_id = uuid::Uuid::new_v4();
+    for (index, network) in networks.into_iter().enumerate() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cfg = config(dir.path());
+        cfg.network = network.to_string().to_ascii_lowercase();
+        if network == BitcoinNetwork::Testnet {
+            cfg.network = "testnet3".into();
+        }
+        let service = MpcService::new(cfg.clone(), Some(TOKEN.into())).unwrap();
+        let mut request = registration_for_network(71, network);
+        request.wallet_id = shared_id;
+        request
+            .addresses
+            .retain(|address| address.role == Role::Rgb);
+        let wrong_network = networks[(index + 1) % networks.len()];
+        let wrong = registration_for_network(71, wrong_network);
+        let mut invalid = request.clone();
+        invalid.bitcoin_network = wrong.bitcoin_network.clone();
+        assert!(matches!(
+            service.register(owner(), invalid).await,
+            Err(MpcError::Invalid(_))
+        ));
+        let mut invalid = request.clone();
+        invalid.genesis_hash = wrong.genesis_hash;
+        assert!(matches!(
+            service.register(owner(), invalid).await,
+            Err(MpcError::Invalid(_))
+        ));
+        let view = service.register(owner(), request.clone()).await.unwrap();
+        assert_eq!(view.external_send, Some(SendProfile::P2wpkhBlind));
+        assert_eq!(
+            view.bitcoin_network,
+            network.to_string().to_ascii_lowercase()
+        );
+        let invoice_request = witness();
+        let invoice = service
+            .witness(owner(), shared_id, invoice_request.clone())
+            .await
+            .unwrap();
+        let data = Invoice::new(invoice.invoice.clone())
+            .unwrap()
+            .invoice_data();
+        assert_eq!(data.network, network);
+        assert!(
+            data.recipient_id
+                .starts_with(rgb_lib::ChainNet::from(network).prefix())
+        );
+        if network == BitcoinNetwork::Testnet {
+            request.bitcoin_network = "testnet3".into();
+            assert_eq!(
+                service.register(owner(), request).await.unwrap().wallet_id,
+                shared_id
+            );
+            cfg.network = "testnet".into();
+        }
+        drop(service);
+        let record_path = dir
+            .path()
+            .join(format!("mpc/registrations/{shared_id}.json"));
+        let before = std::fs::read(&record_path).unwrap();
+        let mut wrong_config = cfg.clone();
+        wrong_config.network = wrong.bitcoin_network;
+        assert!(matches!(
+            MpcService::new(wrong_config, Some(TOKEN.into())),
+            Err(MpcError::Conflict(_))
+        ));
+        let reopened = MpcService::new(cfg, Some(TOKEN.into())).unwrap();
+        assert_eq!(
+            reopened
+                .witness(owner(), shared_id, invoice_request)
+                .await
+                .unwrap()
+                .invoice,
+            invoice.invoice
+        );
+        assert_eq!(std::fs::read(record_path).unwrap(), before);
+    }
+}
+
+#[tokio::test]
+async fn legacy_state_is_bound_only_to_its_original_network_without_rewriting_records() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = config(dir.path());
+    let service = MpcService::new(cfg.clone(), Some(TOKEN.into())).unwrap();
+    let request = registration(73);
+    let id = request.wallet_id;
+    service.register(owner(), request).await.unwrap();
+    let invoice_request = witness();
+    let invoice = service
+        .witness(owner(), id, invoice_request.clone())
+        .await
+        .unwrap();
+    drop(service);
+    let marker = dir.path().join("mpc/network.json");
+    // Only the test-owned fixture is changed to simulate a pre-marker deployment.
+    std::fs::remove_file(&marker).unwrap();
+    let record = dir.path().join(format!("mpc/registrations/{id}.json"));
+    let before = std::fs::read(&record).unwrap();
+    let mut wrong = cfg.clone();
+    wrong.network = "signet".into();
+    assert!(matches!(
+        MpcService::new(wrong, Some(TOKEN.into())),
+        Err(MpcError::Conflict(_))
+    ));
+    assert!(!marker.exists());
+    assert_eq!(std::fs::read(&record).unwrap(), before);
+    let reopened = MpcService::new(cfg, Some(TOKEN.into())).unwrap();
+    assert!(marker.exists());
+    assert_eq!(
+        reopened
+            .witness(owner(), id, invoice_request)
+            .await
+            .unwrap()
+            .invoice,
+        invoice.invoice
+    );
+    assert_eq!(std::fs::read(record).unwrap(), before);
+}
+
+#[test]
+fn unbound_or_corrupt_state_is_not_silently_assigned_a_new_network() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = config(dir.path());
+    let service = MpcService::new(cfg.clone(), Some(TOKEN.into())).unwrap();
+    drop(service);
+    let marker = dir.path().join("mpc/network.json");
+    std::fs::write(&marker, b"invalid JSON").unwrap();
+    assert!(matches!(
+        MpcService::new(cfg.clone(), Some(TOKEN.into())),
+        Err(MpcError::Internal)
+    ));
+    assert_eq!(std::fs::read(&marker).unwrap(), b"invalid JSON");
+    std::fs::remove_file(marker).unwrap();
+    std::fs::create_dir(dir.path().join("mpc/wallets/orphan")).unwrap();
+    assert!(matches!(
+        MpcService::new(cfg, Some(TOKEN.into())),
+        Err(MpcError::Conflict(_))
+    ));
+}
+
+#[test]
+fn provider_names_are_open_validated_and_keep_legacy_wire_values() {
+    for name in ["dynamic_embedded", "fireblocks_vault", "new_provider-v2"] {
+        let json = serde_json::to_string(name).unwrap();
+        let provider: Provider = serde_json::from_str(&json).unwrap();
+        assert_eq!(provider.as_str(), name);
+        assert_eq!(serde_json::to_string(&provider).unwrap(), json);
+    }
+    for name in [
+        "",
+        "Dynamic",
+        "new/provider",
+        " new",
+        "new.provider",
+        "1new",
+        "новий",
+    ] {
+        assert!(Provider::try_from(name.to_string()).is_err());
+    }
+    assert!(Provider::try_from("a".repeat(65)).is_err());
+}
+
+#[tokio::test]
+async fn new_provider_support_depends_on_wallet_shape_and_survives_restart() {
+    use rgb_node_api::mpc::{Role, SendProfile};
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = config(dir.path());
+    let service = MpcService::new(cfg.clone(), Some(TOKEN.into())).unwrap();
+    let providers = [
+        Provider::DynamicEmbedded,
+        Provider::FireblocksVault,
+        Provider::try_from(format!("adapter_{}", uuid::Uuid::new_v4())).unwrap(),
+    ];
+    let mut saved = Vec::new();
+    for (index, provider) in providers.into_iter().enumerate() {
+        let mut request = registration(80 + index as u8 * 2);
+        request.provider = provider.clone();
+        request
+            .addresses
+            .retain(|address| address.role == Role::Rgb);
+        let id = request.wallet_id;
+        let view = service.register(owner(), request.clone()).await.unwrap();
+        assert_eq!(view.external_send, Some(SendProfile::P2wpkhBlind));
+        assert!(!view.signing);
+        let invoice_request = witness();
+        let invoice = service
+            .witness(owner(), id, invoice_request.clone())
+            .await
+            .unwrap();
+        let mut changed = request.clone();
+        changed.provider = Provider::try_from("replacement".to_string()).unwrap();
+        assert!(matches!(
+            service.register(owner(), changed.clone()).await,
+            Err(MpcError::Conflict(_))
+        ));
+        changed.wallet_id = uuid::Uuid::new_v4();
+        assert!(matches!(
+            service.register(owner(), changed).await,
+            Err(MpcError::Conflict(_))
+        ));
+        saved.push((id, provider, invoice_request, invoice.invoice));
+    }
+    let mut invalid = registration(88);
+    invalid.provider = Provider::Other("Dynamic".into());
+    assert!(matches!(
+        service.register(owner(), invalid).await,
+        Err(MpcError::Invalid(_))
+    ));
+    // An otherwise valid provider name does not enable an unsupported shape.
+    let mut two_addresses = registration(90);
+    two_addresses.provider = Provider::DynamicEmbedded;
+    assert!(
+        service
+            .register(owner(), two_addresses)
+            .await
+            .unwrap()
+            .external_send
+            .is_none()
+    );
+    drop(service);
+    let service = MpcService::new(cfg, Some(TOKEN.into())).unwrap();
+    for (id, provider, request, invoice) in saved {
+        let view = service.wallet(owner(), id).await.unwrap();
+        assert_eq!(view.provider, provider);
+        assert_eq!(view.external_send, Some(SendProfile::P2wpkhBlind));
+        assert_eq!(
+            service.witness(owner(), id, request).await.unwrap().invoice,
+            invoice
+        );
+    }
+}
+
+#[tokio::test]
+async fn capabilities_match_enabled_schemas_after_registration_and_restart() {
+    for bfa in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cfg = config(dir.path());
+        cfg.bfa_enabled = bfa;
+        cfg.eth_rpc_url = bfa.then(|| "http://127.0.0.1:1".into());
+        let service = MpcService::new(cfg.clone(), Some(TOKEN.into())).unwrap();
+        let request = registration(19);
+        let id = request.wallet_id;
+        let expected = if bfa { vec!["nia", "bfa"] } else { vec!["nia"] };
+        assert_eq!(
+            service
+                .register(owner(), request.clone())
+                .await
+                .unwrap()
+                .supported_schemas,
+            expected
+        );
+        assert_eq!(
+            service
+                .register(owner(), request)
+                .await
+                .unwrap()
+                .supported_schemas,
+            expected
+        );
+        drop(service);
+        let service = MpcService::new(cfg, Some(TOKEN.into())).unwrap();
+        assert_eq!(
+            service.wallet(owner(), id).await.unwrap().supported_schemas,
+            expected
+        );
+    }
+}
+
+#[tokio::test]
+async fn unavailable_btc_does_not_hide_cached_rgb_assets() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = config(dir.path());
+    config.indexer_address = "invalid-indexer-url".into();
+    let service = MpcService::new(config, Some(TOKEN.into())).unwrap();
+    let request = registration(7);
+    let id = request.wallet_id;
+    service.register(owner(), request).await.unwrap();
+    let (assets, btc) = service.asset_snapshot(owner(), id).await.unwrap();
+    assert!(assets.nia.unwrap().is_empty());
+    assert!(btc.is_none(), "An indexer error is not a zero BTC balance");
+}
+
+#[tokio::test]
 async fn registration_invoice_isolation_and_restart() {
     let dir = tempfile::tempdir().unwrap();
     let config = config(dir.path());
@@ -38,6 +331,10 @@ async fn registration_invoice_isolation_and_restart() {
     ] {
         assert!(matches!(
             service.wallet(foreign.clone(), wallet_id).await,
+            Err(MpcError::NotFound)
+        ));
+        assert!(matches!(
+            service.asset_snapshot(foreign.clone(), wallet_id).await,
             Err(MpcError::NotFound)
         ));
         assert!(matches!(
@@ -314,7 +611,7 @@ async fn corrupt_records_block_new_bindings_but_not_existing_wallet_reads() {
 }
 
 #[tokio::test]
-// DYNAMIC_EMBEDDED_POC: cancellation must preserve ambiguous signed operations.
+// DYNAMIC_EMBEDDED_POC: shared cancellation preserves ambiguous signed operations.
 async fn cancellation_never_discards_an_unknown_submission_or_foreign_operation() {
     let dir = tempfile::tempdir().unwrap();
     let service = MpcService::new(config(dir.path()), Some(TOKEN.into())).unwrap();
@@ -489,9 +786,9 @@ fn a_provider_with_inconsistent_address_metadata_cannot_create_an_invoice() {
     );
 }
 
-// DYNAMIC_EMBEDDED_POC: send ownership/provider boundary; no network/signing.
+// DYNAMIC_EMBEDDED_POC: shared send ownership/profile boundary; no network/signing.
 #[tokio::test]
-async fn dynamic_return_cannot_access_another_owner_or_a_vault_wallet() {
+async fn external_send_cannot_access_another_owner_or_an_unsupported_wallet() {
     use rgb_node_api::mpc::SendRequest;
     let dir = tempfile::tempdir().unwrap();
     let service = MpcService::new(config(dir.path()), Some(TOKEN.into())).unwrap();
@@ -525,6 +822,8 @@ async fn dynamic_return_cannot_access_another_owner_or_a_vault_wallet() {
     ));
     assert!(matches!(
         service.prepare_send(owner(), id, request).await,
-        Err(MpcError::Invalid(_))
+        Err(MpcError::Invalid(
+            "External send requires one RGB P2WPKH address without a separate fee address"
+        ))
     ));
 }

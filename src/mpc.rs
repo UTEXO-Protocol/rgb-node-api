@@ -13,7 +13,7 @@ use std::{
 
 use crate::wallet::Config;
 use rgb_lib::{
-    AssetSchema, Assignment, BitcoinNetwork,
+    Assignment, BitcoinNetwork,
     bdk_wallet::KeychainKind,
     bitcoin::{
         Address, CompressedPublicKey, Network, Psbt,
@@ -24,19 +24,18 @@ use rgb_lib::{
     },
     mpc::{MpcAddressInfo, MpcWalletProvider},
     wallet::{
-        AssetFilter, Assets, DatabaseType, MpcWallet, Online, OnlineOptions, ReceiveData,
-        RgbWalletOpsOffline, RgbWalletOpsOnline, Transfer, WalletData,
+        AssetFilter, Assets, BtcBalance, DatabaseType, MpcWallet, Online, OnlineOptions,
+        ReceiveData, RgbWalletOpsOffline, RgbWalletOpsOnline, Transfer, WalletData,
     },
 };
 use serde::{Deserialize, Serialize};
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
-// DYNAMIC_EMBEDDED_POC BEGIN: optional Dynamic return adapter.
+// DYNAMIC_EMBEDDED_POC: shared external-send engine; retain for other providers.
 #[path = "mpc_send.rs"]
 mod send;
-pub use send::{SendRequest, SendView};
-// DYNAMIC_EMBEDDED_POC END
+pub use send::{SendProfile, SendRequest, SendView};
 
 #[derive(Debug)]
 pub enum MpcError {
@@ -79,10 +78,58 @@ pub struct Owner {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(try_from = "String", into = "String")]
 pub enum Provider {
+    // Preserve existing Rust names and serialized registrations. These names
+    // carry identity only; operation support must never branch on the provider.
     DynamicEmbedded,
     FireblocksVault,
+    Other(String),
+}
+
+impl Provider {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::DynamicEmbedded => "dynamic_embedded",
+            Self::FireblocksVault => "fireblocks_vault",
+            Self::Other(value) => value,
+        }
+    }
+
+    fn validate(&self) -> Result<()> {
+        // Also validate callers of the Rust API, not only JSON deserialization.
+        if Self::try_from(self.as_str().to_owned()).as_ref() != Ok(self) {
+            return Err(MpcError::Invalid("Invalid provider identifier"));
+        }
+        Ok(())
+    }
+}
+
+impl TryFrom<String> for Provider {
+    type Error = &'static str;
+
+    fn try_from(value: String) -> std::result::Result<Self, Self::Error> {
+        if value.is_empty()
+            || value.len() > 64
+            || !value.as_bytes()[0].is_ascii_lowercase()
+            || !value
+                .bytes()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'_' || c == b'-')
+        {
+            return Err("Invalid provider identifier");
+        }
+        Ok(match value.as_str() {
+            "dynamic_embedded" => Self::DynamicEmbedded,
+            "fireblocks_vault" => Self::FireblocksVault,
+            _ => Self::Other(value),
+        })
+    }
+}
+
+impl From<Provider> for String {
+    fn from(value: Provider) -> Self {
+        value.as_str().to_owned()
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -169,6 +216,9 @@ pub struct WalletView {
     pub addresses: Vec<RegisteredAddress>,
     pub supported_schemas: Vec<String>,
     pub witness_receive: bool,
+    /// Supported external PSBT contract, independent of provider name or funding.
+    pub external_send: Option<SendProfile>,
+    /// Local server signing; external send does not require this capability.
     pub signing: bool,
 }
 
@@ -260,10 +310,9 @@ impl MpcService {
                 "MPC service token must contain at least 32 bytes",
             ));
         }
+        // DYNAMIC_EMBEDDED_POC: shared send policy; retain for other providers.
+        config.mpc_send.validate().map_err(MpcError::Invalid)?;
         let network = config.net()?;
-        if network == BitcoinNetwork::Mainnet {
-            return Err(MpcError::Invalid("MPC POC requires a Bitcoin test network"));
-        }
         let root = Path::new(&config.datadir()).join("mpc");
         private_directory(&root)?;
         let lock = fs::OpenOptions::new()
@@ -276,6 +325,7 @@ impl MpcService {
             .map_err(|_| MpcError::Conflict("MPC data directory is already in use"))?;
         private_directory(&root.join("registrations"))?;
         private_directory(&root.join("wallets"))?;
+        bind_network(&root, network)?;
         Ok(Self {
             token_hash: Some(sha256::Hash::hash(token.as_bytes()).to_byte_array()),
             manager: Some(Arc::new(ServiceState {
@@ -378,7 +428,7 @@ impl MpcService {
         self.call(id, move |manager| {
             let record = manager.owned(&owner, id)?;
             manager.open(&record)?;
-            Ok(view(&record))
+            view(&record, &manager.config)
         })
         .await
     }
@@ -394,10 +444,37 @@ impl MpcService {
     pub async fn assets(&self, owner: Owner, id: Uuid) -> Result<Assets> {
         self.call(id, move |manager| {
             let record = manager.owned(&owner, id)?;
-            Ok(manager
-                .open(&record)?
-                .wallet
-                .list_assets(vec![AssetSchema::Nia])?)
+            Ok(manager.open(&record)?.wallet.list_assets(vec![])?)
+        })
+        .await
+    }
+    /// Include a live BTC snapshot without making cached RGB balances depend on
+    /// indexer availability. Ownership is checked before either wallet read.
+    pub async fn asset_snapshot(
+        &self,
+        owner: Owner,
+        id: Uuid,
+    ) -> Result<(Assets, Option<BtcBalance>)> {
+        self.call(id, move |manager| {
+            let record = manager.owned(&owner, id)?;
+            let options = OnlineOptions {
+                indexer_url: manager.config.indexer_address.clone(),
+                skip_consistency_check: false,
+                vanilla_sync_lookback: 20,
+                eth_rpc_url: manager.config.eth_rpc_url.clone(),
+            };
+            let entry = manager.open(&record)?;
+            let assets = entry.wallet.list_assets(vec![])?;
+            let btc_balance = (|| -> std::result::Result<BtcBalance, rgb_lib::Error> {
+                if entry.online.is_none() {
+                    entry.online = Some(entry.wallet.go_online(options)?);
+                }
+                // MPC reads current UTXOs from the indexer; no RGB refresh or
+                // provider signature is needed just to display BTC.
+                entry.wallet.get_btc_balance(entry.online, true)
+            })()
+            .ok();
+            Ok((assets, btc_balance))
         })
         .await
     }
@@ -567,6 +644,79 @@ struct Manager {
     entries: BTreeMap<Uuid, Entry>,
     _lock: Arc<fs::File>,
 }
+
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct NetworkBinding {
+    version: u32,
+    bitcoin_network: String,
+    genesis_hash: String,
+}
+
+// DYNAMIC_EMBEDDED_POC: shared network isolation; retain for all providers.
+// Called under service.lock. One state directory belongs to one chain; changing
+// configuration must not reinterpret persisted registrations or send journals.
+fn bind_network(root: &Path, network: BitcoinNetwork) -> Result<()> {
+    let expected = NetworkBinding {
+        version: 1,
+        bitcoin_network: network.to_string().to_ascii_lowercase(),
+        genesis_hash: genesis_block(Network::from(network))
+            .block_hash()
+            .to_string(),
+    };
+    let path = root.join("network.json");
+    match fs::read(&path) {
+        Ok(bytes) => {
+            let saved: NetworkBinding = serde_json::from_slice(&bytes)?;
+            if saved != expected {
+                return Err(MpcError::Conflict(
+                    "MPC data directory belongs to another Bitcoin network; use a separate data_dir",
+                ));
+            }
+            return Ok(());
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    // Adopt legacy state only when its registrations confirm the configured
+    // chain. Do not rewrite registrations, wallets, or operation journals.
+    let mut registrations = 0;
+    for file in fs::read_dir(root.join("registrations"))? {
+        let path = file?.path();
+        let Some(id) = registration_file_id(&path) else {
+            continue;
+        };
+        let record: Record = serde_json::from_slice(&fs::read(path)?)?;
+        if record.version != 1 || record.registration.wallet_id != id {
+            return Err(MpcError::Internal);
+        }
+        if Config::parse_network(&record.registration.bitcoin_network)? != network
+            || record.registration.genesis_hash != expected.genesis_hash
+        {
+            return Err(MpcError::Conflict(
+                "Existing MPC registrations belong to another Bitcoin network",
+            ));
+        }
+        registrations += 1;
+    }
+    if registrations == 0 {
+        for directory in ["wallets", "sends"] {
+            let path = root.join(directory);
+            if path.exists() && fs::read_dir(path)?.next().is_some() {
+                return Err(MpcError::Conflict(
+                    "Cannot determine Bitcoin network for existing MPC state without registrations",
+                ));
+            }
+        }
+    }
+    let mut temp = tempfile::NamedTempFile::new_in(root)?;
+    temp.write_all(&serde_json::to_vec_pretty(&expected)?)?;
+    temp.as_file().sync_all()?;
+    temp.persist(path).map_err(|_| MpcError::Internal)?;
+    fs::File::open(root)?.sync_all()?;
+    Ok(())
+}
+
 impl Manager {
     fn registrations(&self) -> Result<Vec<(Owner, Uuid)>> {
         let mut registered = Vec::new();
@@ -618,10 +768,11 @@ impl Manager {
         Ok(())
     }
     fn validate(&self, request: &Registration) -> Result<()> {
+        request.provider.validate()?;
         let genesis = genesis_block(Network::from(self.network))
             .block_hash()
             .to_string();
-        if request.bitcoin_network != self.config.network.to_ascii_lowercase()
+        if Config::parse_network(&request.bitcoin_network)? != self.network
             || request.genesis_hash != genesis
         {
             return Err(MpcError::Invalid(
@@ -654,7 +805,7 @@ impl Manager {
                     bitcoin_network: self.network,
                     database_type: DatabaseType::Sqlite,
                     max_allocations_per_utxo: 5,
-                    supported_schemas: vec![AssetSchema::Nia],
+                    supported_schemas: self.config.supported_schemas()?,
                     reuse_addresses: true,
                 },
                 request.wallet_id.to_string(),
@@ -686,6 +837,7 @@ impl Manager {
         }
         request.addresses.sort_by_key(|a| a.role);
         self.validate(&request)?;
+        request.bitcoin_network = self.network.to_string().to_ascii_lowercase();
         for address in &mut request.addresses {
             address.address = checked_address(address, self.network)?.to_string();
             address.public_key = address.public_key.to_ascii_lowercase();
@@ -698,7 +850,7 @@ impl Manager {
                 if record.registration != request {
                     return Err(MpcError::Conflict("Wallet binding is immutable"));
                 }
-                return Ok(view(&record));
+                return view(&record, &self.config);
             }
             Err(MpcError::NotFound) => {}
             Err(error) => return Err(error),
@@ -739,7 +891,7 @@ impl Manager {
             invoices: BTreeMap::new(),
         };
         self.save(&record)?;
-        Ok(view(&record))
+        view(&record, &self.config)
     }
     fn recover_invoice(
         &mut self,
@@ -949,18 +1101,23 @@ impl Manager {
         Ok(result)
     }
 }
-fn view(record: &Record) -> WalletView {
+fn view(record: &Record, config: &Config) -> Result<WalletView> {
     let registration = &record.registration;
-    WalletView {
+    Ok(WalletView {
         wallet_id: registration.wallet_id,
         provider: registration.provider.clone(),
         bitcoin_network: registration.bitcoin_network.clone(),
         genesis_hash: registration.genesis_hash.clone(),
         addresses: registration.addresses.clone(),
-        supported_schemas: vec!["nia".into()],
+        supported_schemas: config
+            .supported_schemas()?
+            .iter()
+            .map(|schema| format!("{schema:?}").to_ascii_lowercase())
+            .collect(),
         witness_receive: true,
+        external_send: send::supported_profile(registration),
         signing: false,
-    }
+    })
 }
 
 #[cfg(test)]

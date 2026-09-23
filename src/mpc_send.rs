@@ -1,13 +1,40 @@
-//! DYNAMIC_EMBEDDED_POC: durable, externally signed NIA returns for the Dynamic Testnet3 POC.
+//! DYNAMIC_EMBEDDED_POC: shared external PSBT sends on the configured Bitcoin network.
+//! Provider identity does not select signing or transaction behavior. Retain this
+//! module when removing a provider integration.
 use super::*;
 use crate::signing::{PreparedP2wpkh, VerifiedInput};
+use crate::wallet::MpcSendPolicy;
 use rgb_lib::{
     TransferStatus,
     wallet::{Invoice, Recipient, Unspent},
 };
 use std::collections::HashMap;
 
+#[cfg(test)]
 const ASSET: &str = "rgb:qXB4xkhB-3pmU6PB-rTy_qNd-ErrO4OQ-8GFLLQq-gzGoing";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SendProfile {
+    P2wpkhBlind,
+}
+
+fn send_address(registration: &Registration) -> Result<&RegisteredAddress> {
+    match registration.addresses.as_slice() {
+        [address] if address.role == Role::Rgb && address.script_type == ScriptType::P2wpkh => {
+            Ok(address)
+        }
+        _ => Err(MpcError::Invalid(
+            "External send requires one RGB P2WPKH address without a separate fee address",
+        )),
+    }
+}
+
+pub(super) fn supported_profile(registration: &Registration) -> Option<SendProfile> {
+    send_address(registration)
+        .ok()
+        .map(|_| SendProfile::P2wpkhBlind)
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -42,6 +69,8 @@ struct Journal {
     input_snapshot: Option<Vec<Unspent>>,
     #[serde(default)]
     submission_started: bool,
+    #[serde(default)]
+    policy: MpcSendPolicy,
 }
 
 fn terminal(state: &str) -> bool {
@@ -55,21 +84,29 @@ fn now() -> Result<u64> {
         .as_secs())
 }
 
-fn invoice(request: &SendRequest, endpoints: &[String]) -> Result<rgb_lib::wallet::InvoiceData> {
+fn invoice(
+    request: &SendRequest,
+    endpoints: &[String],
+    network: BitcoinNetwork,
+    policy: &MpcSendPolicy,
+) -> Result<rgb_lib::wallet::InvoiceData> {
+    policy.validate().map_err(MpcError::Invalid)?;
     let amount = request
         .amount
         .parse::<u64>()
-        .map_err(|_| MpcError::Invalid("Invalid NIA amount"))?;
-    if !(1..=25).contains(&amount)
+        .map_err(|_| MpcError::Invalid("Invalid asset amount"))?;
+    if !(1..=policy.max_amount).contains(&amount)
         || amount.to_string() != request.amount
         || request.invoice.len() > 16_384
     {
-        return Err(MpcError::Invalid("POC amount must be 1 to 25 NIA"));
+        return Err(MpcError::Invalid(
+            "Amount exceeds the configured send limit or is not canonical",
+        ));
     }
     let data = Invoice::new(request.invoice.clone())?.invoice_data();
-    let minimum_expiry = now()?.saturating_add(120);
-    if data.network != BitcoinNetwork::Testnet
-        || data.asset_id.as_deref() != Some(ASSET)
+    let minimum_expiry = now()?.saturating_add(policy.min_invoice_validity_secs);
+    if data.network != network
+        || data.asset_id.is_none()
         || data.assignment != Assignment::Fungible(amount)
         || data
             .expiration_timestamp
@@ -81,10 +118,19 @@ fn invoice(request: &SendRequest, endpoints: &[String]) -> Result<rgb_lib::walle
         || rgb_lib::utils::script_buf_from_recipient_id(data.recipient_id.clone())?.is_some()
     {
         return Err(MpcError::Invalid(
-            "Expected an unexpired Testnet3 NIA blind invoice on the configured transport",
+            "Expected an unexpired asset blind invoice on the configured network and transport",
         ));
     }
     Ok(data)
+}
+
+// The immutable invoice pins the asset, including legacy NIA journals. Never use
+// the currently selected UI asset when recovering an existing operation.
+fn request_asset(request: &SendRequest) -> Result<String> {
+    Invoice::new(request.invoice.clone())?
+        .invoice_data()
+        .asset_id
+        .ok_or(MpcError::Invalid("An asset-bound invoice is required"))
 }
 
 /// Validate the server-generated transaction and preserve its RGB metadata.
@@ -94,23 +140,17 @@ fn plan(
     psbt: Psbt,
     unspents: &[Unspent],
     require_settled: bool,
+    asset_id: &str,
+    network: BitcoinNetwork,
+    policy: &MpcSendPolicy,
 ) -> Result<PreparedP2wpkh> {
-    let address = record
-        .registration
-        .addresses
-        .iter()
-        .find(|a| a.role == Role::Rgb)
-        .ok_or(MpcError::Invalid("RGB address missing"))?;
-    if address.script_type != ScriptType::P2wpkh || record.registration.addresses.len() != 1 {
-        return Err(MpcError::Invalid(
-            "POC send requires one Native SegWit address",
-        ));
-    }
+    policy.validate().map_err(MpcError::Invalid)?;
+    let address = send_address(&record.registration)?;
     let key = CompressedPublicKey::from_str(&address.public_key)
         .map_err(|_| MpcError::Invalid("Invalid public key"))?;
-    let script = checked_address(address, BitcoinNetwork::Testnet)?.script_pubkey();
+    let script = checked_address(address, network)?.script_pubkey();
     if psbt.inputs.is_empty()
-        || psbt.inputs.len() > 10
+        || psbt.inputs.len() > policy.max_inputs
         || psbt.unsigned_tx.output.len() != 2
         || !psbt.unsigned_tx.output[0].script_pubkey.is_op_return()
         || psbt.unsigned_tx.output[0].script_pubkey.len() != 34
@@ -133,14 +173,14 @@ fn plan(
                         && u.utxo.outpoint.vout == input.previous_output.vout
                 })
                 .ok_or(MpcError::Conflict(
-                    "Input differs from synced NIA wallet state",
+                    "Input differs from synced RGB wallet state",
                 ))?;
             if require_settled
                 && (unspent.pending_blinded != 0
                     || unspent
                         .rgb_allocations
                         .iter()
-                        .any(|a| !a.settled || a.asset_id.as_deref() != Some(ASSET)))
+                        .any(|a| !a.settled || a.asset_id.as_deref() != Some(asset_id)))
             {
                 return Err(MpcError::Conflict(
                     "Input has pending or unrelated RGB allocations",
@@ -158,7 +198,11 @@ fn plan(
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    Ok(PreparedP2wpkh::prepare(psbt, &verified, 2000)?)
+    Ok(PreparedP2wpkh::prepare(
+        psbt,
+        &verified,
+        policy.max_fee_sat,
+    )?)
 }
 
 impl MpcService {
@@ -257,7 +301,7 @@ impl Manager {
         let transfers = self
             .open(record)?
             .wallet
-            .list_transfers(AssetFilter::Id(ASSET.into()), None)?;
+            .list_transfers(AssetFilter::Id(request_asset(&journal.request)?), None)?;
         let added: Vec<_> = transfers
             .iter()
             .filter(|t| !before.contains(&t.batch_transfer_idx))
@@ -311,7 +355,15 @@ impl Manager {
             return Err(MpcError::Internal);
         }
         let snapshot = journal.input_snapshot.as_ref().ok_or(MpcError::Internal)?;
-        let prepared = plan(record, original.clone(), snapshot, true)?;
+        let prepared = plan(
+            record,
+            original.clone(),
+            snapshot,
+            true,
+            &request_asset(&journal.request)?,
+            self.network,
+            &journal.policy,
+        )?;
         journal.original_psbt = Some(original.to_string());
         journal.view.psbt = journal.original_psbt.clone();
         journal.view.txid = transfer.txid.clone();
@@ -352,7 +404,7 @@ impl Manager {
         let transfers = self
             .open(record)?
             .wallet
-            .list_transfers(AssetFilter::Id(ASSET.into()), None)?;
+            .list_transfers(AssetFilter::Id(request_asset(&journal.request)?), None)?;
         if let Some(transfer) = transfers.iter().find(|t| {
             Some(t.batch_transfer_idx) == journal.view.batch_transfer_idx
                 && t.txid == journal.view.txid
@@ -403,7 +455,8 @@ impl Manager {
         }
         let online = self.send_online(&record)?;
         let wallet = &mut self.open(&record)?.wallet;
-        let transfers = wallet.list_transfers(AssetFilter::Id(ASSET.into()), None)?;
+        let transfers =
+            wallet.list_transfers(AssetFilter::Id(request_asset(&journal.request)?), None)?;
         if !transfers.iter().any(|t| {
             Some(t.batch_transfer_idx) == journal.view.batch_transfer_idx
                 && t.txid == journal.view.txid
@@ -428,11 +481,7 @@ impl Manager {
 
     fn prepare_send(&mut self, owner: &Owner, id: Uuid, request: SendRequest) -> Result<SendView> {
         let record = self.owned(owner, id)?;
-        if self.network != BitcoinNetwork::Testnet
-            || record.registration.provider != Provider::DynamicEmbedded
-        {
-            return Err(MpcError::Invalid("Dynamic Testnet3 POC wallet required"));
-        }
+        send_address(&record.registration)?;
         if self.send_path(id, request.request_id).exists() {
             let mut previous = self.read_send(id, request.request_id)?;
             if previous.request != request {
@@ -446,7 +495,10 @@ impl Manager {
             }
             return Ok(previous.view);
         }
-        let data = invoice(&request, &self.config.proxy_address)?;
+        let policy = self.config.mpc_send.clone();
+        let network = self.network;
+        let data = invoice(&request, &self.config.proxy_address, network, &policy)?;
+        let asset_id = request_asset(&request)?;
         let dir = self.root.join("sends").join(id.to_string());
         private_directory(&dir)?;
         for file in fs::read_dir(dir)? {
@@ -467,7 +519,7 @@ impl Manager {
         wallet.refresh(online, None, vec![], false)?;
         let unspents = wallet.list_unspents(Some(online), false, false)?;
         let recipients = HashMap::from([(
-            ASSET.into(),
+            asset_id.clone(),
             vec![Recipient {
                 recipient_id: data.recipient_id,
                 witness_data: None,
@@ -479,15 +531,26 @@ impl Manager {
             .expiration_timestamp
             .ok_or(MpcError::Invalid("Invoice expiry required"))?;
         // Check funding before writing a durable mutation intent.
-        let dry = wallet.send_begin(online, recipients.clone(), false, 2, 1, expiry, true)?;
+        let dry = wallet.send_begin(
+            online,
+            recipients.clone(),
+            false,
+            policy.fee_rate_sat_vb,
+            policy.min_confirmations,
+            expiry,
+            true,
+        )?;
         plan(
             &record,
             Psbt::from_str(&dry.psbt).map_err(|_| MpcError::Internal)?,
             &unspents,
             true,
+            &asset_id,
+            network,
+            &policy,
         )?;
         let prior_batch_ids = wallet
-            .list_transfers(AssetFilter::Id(ASSET.into()), None)?
+            .list_transfers(AssetFilter::Id(asset_id.clone()), None)?
             .iter()
             .map(|transfer| transfer.batch_transfer_idx)
             .collect();
@@ -509,14 +572,28 @@ impl Manager {
             prior_batch_ids: Some(prior_batch_ids),
             input_snapshot: Some(unspents.clone()),
             submission_started: false,
+            policy: policy.clone(),
         };
         self.save_send(&journal)?;
-        let begun = self
-            .open(&record)?
-            .wallet
-            .send_begin(online, recipients, false, 2, 1, expiry, false)?;
+        let begun = self.open(&record)?.wallet.send_begin(
+            online,
+            recipients,
+            false,
+            policy.fee_rate_sat_vb,
+            policy.min_confirmations,
+            expiry,
+            false,
+        )?;
         let original = Psbt::from_str(&begun.psbt).map_err(|_| MpcError::Internal)?;
-        let prepared = plan(&record, original.clone(), &unspents, true)?;
+        let prepared = plan(
+            &record,
+            original.clone(),
+            &unspents,
+            true,
+            &asset_id,
+            network,
+            &policy,
+        )?;
         journal.original_psbt = Some(begun.psbt.clone());
         journal.view.psbt = Some(begun.psbt);
         journal.view.txid = Some(original.unsigned_tx.compute_txid().to_string());
@@ -557,7 +634,12 @@ impl Manager {
                 "Send needs reconciliation; no new submission attempted",
             ));
         }
-        invoice(&journal.request, &self.config.proxy_address)?;
+        invoice(
+            &journal.request,
+            &self.config.proxy_address,
+            self.network,
+            &journal.policy,
+        )?;
         if signed_psbt.len() > 128_000 {
             return Err(MpcError::Invalid("Signed PSBT too large"));
         }
@@ -579,6 +661,9 @@ impl Manager {
             original,
             &snapshot,
             journal.input_snapshot.is_some(),
+            &request_asset(&journal.request)?,
+            self.network,
+            &journal.policy,
         )?
         .finalize_psbt(&signed)?;
         let online = self.send_online(&record)?;
@@ -667,8 +752,8 @@ mod tests {
         (record, psbt)
     }
 
-    fn plan(record: &Record, psbt: Psbt) -> Result<PreparedP2wpkh> {
-        let unspents = vec![Unspent {
+    fn unspents() -> Vec<Unspent> {
+        vec![Unspent {
             utxo: rgb_lib::wallet::Utxo {
                 outpoint: rgb_lib::wallet::Outpoint {
                     txid: Txid::from_byte_array([1; 32]).to_string(),
@@ -681,8 +766,161 @@ mod tests {
             },
             rgb_allocations: vec![],
             pending_blinded: 0,
-        }];
-        super::plan(record, psbt, &unspents, true)
+        }]
+    }
+
+    fn plan(record: &Record, psbt: Psbt) -> Result<PreparedP2wpkh> {
+        super::plan(
+            record,
+            psbt,
+            &unspents(),
+            true,
+            ASSET,
+            BitcoinNetwork::Testnet,
+            &MpcSendPolicy::default(),
+        )
+    }
+
+    fn invoice(
+        request: &SendRequest,
+        endpoints: &[String],
+    ) -> Result<rgb_lib::wallet::InvoiceData> {
+        super::invoice(
+            request,
+            endpoints,
+            BitcoinNetwork::Testnet,
+            &MpcSendPolicy::default(),
+        )
+    }
+
+    #[test]
+    fn send_invoice_and_psbt_validation_use_the_selected_network() {
+        let networks = [
+            BitcoinNetwork::Mainnet,
+            BitcoinNetwork::Testnet,
+            BitcoinNetwork::Testnet4,
+            BitcoinNetwork::Signet,
+            BitcoinNetwork::Regtest,
+        ];
+        let endpoint = "rpc://proxy.example/json-rpc";
+        for network in networks {
+            let chain = rgb_lib::ChainNet::from(network);
+            let prefix = chain.prefix();
+            let request = SendRequest {
+                request_id: Uuid::new_v4(),
+                invoice: format!(
+                    "{ASSET}/~/ae/{prefix}:utxob:7TjnbTy5-H~OndMD-98vlg7F-Fp1VnAt-8J5Ju_P-F~X03DP-kVVUC?assignment_name=assetOwner&expiry=2000000000&endpoints={endpoint}"
+                ),
+                amount: "1".into(),
+            };
+            for selected in networks {
+                assert_eq!(
+                    super::invoice(
+                        &request,
+                        &[endpoint.into()],
+                        selected,
+                        &MpcSendPolicy::default()
+                    )
+                    .is_ok(),
+                    selected == network
+                );
+            }
+            let (mut record, psbt) = fixture();
+            let address = &mut record.registration.addresses[0];
+            let key = CompressedPublicKey::from_str(&address.public_key).unwrap();
+            address.address =
+                rgb_lib::bitcoin::Address::p2wpkh(&key, Network::from(network)).to_string();
+            record.registration.bitcoin_network = network.to_string().to_ascii_lowercase();
+            assert_eq!(
+                super::plan(
+                    &record,
+                    psbt,
+                    &unspents(),
+                    true,
+                    ASSET,
+                    network,
+                    &MpcSendPolicy::default()
+                )
+                .unwrap()
+                .fee_sat(),
+                308
+            );
+        }
+    }
+
+    #[test]
+    fn return_inputs_are_checked_against_the_saved_asset_including_bfa() {
+        let (record, psbt) = fixture();
+        let mut inputs = unspents();
+        inputs[0]
+            .rgb_allocations
+            .push(rgb_lib::wallet::RgbAllocation {
+                asset_id: Some("bfa-fixture".into()),
+                assignment: Assignment::Fungible(5),
+                settled: true,
+            });
+        assert!(
+            super::plan(
+                &record,
+                psbt.clone(),
+                &inputs,
+                true,
+                "bfa-fixture",
+                BitcoinNetwork::Testnet,
+                &MpcSendPolicy::default()
+            )
+            .is_ok()
+        );
+        assert!(
+            super::plan(
+                &record,
+                psbt.clone(),
+                &inputs,
+                true,
+                ASSET,
+                BitcoinNetwork::Testnet,
+                &MpcSendPolicy::default()
+            )
+            .is_err()
+        );
+        inputs[0].rgb_allocations[0].settled = false;
+        assert!(
+            super::plan(
+                &record,
+                psbt,
+                &inputs,
+                true,
+                "bfa-fixture",
+                BitcoinNetwork::Testnet,
+                &MpcSendPolicy::default()
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn saved_return_invoice_pins_asset_and_still_checks_amount_expiry_and_transport() {
+        let recipient = "tb3:utxob:7TjnbTy5-H~OndMD-98vlg7F-Fp1VnAt-8J5Ju_P-F~X03DP-kVVUC";
+        let endpoint = "rpcs://proxy.iriswallet.com/0.2/json-rpc";
+        let make = |asset: &str| {
+            format!(
+                "{asset}/~/ae/{recipient}?assignment_name=assetOwner&expiry=2000000000&endpoints={endpoint}"
+            )
+        };
+        let mut request = SendRequest {
+            request_id: Uuid::new_v4(),
+            invoice: make(ASSET),
+            amount: "1".into(),
+        };
+        assert_eq!(request_asset(&request).unwrap(), ASSET);
+        assert!(invoice(&request, &[endpoint.into()]).is_ok());
+        assert!(invoice(&request, &["rpc://wrong.invalid".into()]).is_err());
+        request.amount = "2".into();
+        assert!(invoice(&request, &[endpoint.into()]).is_err());
+        request.amount = "1".into();
+        request.invoice = make("rgb:~");
+        assert!(request_asset(&request).is_err());
+        assert!(invoice(&request, &[endpoint.into()]).is_err());
     }
 
     #[test]

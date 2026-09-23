@@ -1,6 +1,5 @@
 use std::collections::BTreeSet;
 
-use rgb_lib::AssetSchema;
 use rgb_lib::wallet::{
     Balance, BtcBalance, DatabaseType, Online, OnlineOptions, ReceiveData, RgbWalletOpsOffline,
     RgbWalletOpsOnline, SinglesigKeys, Wallet, WalletData,
@@ -42,7 +41,7 @@ impl RgbWalletState {
                 bitcoin_network: config.net()?,
                 database_type: DatabaseType::Sqlite,
                 max_allocations_per_utxo: max_allocations_per_utxo.unwrap_or(5),
-                supported_schemas: vec![AssetSchema::Nia],
+                supported_schemas: config.supported_schemas()?,
                 reuse_addresses: false,
             },
             SinglesigKeys {

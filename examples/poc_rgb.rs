@@ -1,4 +1,4 @@
-//! Gateway worker helper for the registered Testnet3 NIA Sandbox wallet. No secrets,
+//! Gateway worker helper for the registered Testnet3 fungible Sandbox wallet. No secrets,
 //! provider calls, or public HTTP spending endpoint. JSON stdin / JSON stdout.
 use std::{collections::HashMap, fs, io::Read, path::Path, str::FromStr};
 
@@ -21,6 +21,21 @@ use rgb_node_api::{
 use serde_json::{Value, json};
 
 const ASSET: &str = "rgb:qXB4xkhB-3pmU6PB-rTy_qNd-ErrO4OQ-8GFLLQq-gzGoing";
+fn asset(v: &Value) -> Result<&str> {
+    let id = v["assetId"].as_str().unwrap_or(ASSET);
+    ensure!(
+        id == ASSET || v["bfaMock"] == true,
+        "Non-legacy asset requires explicit BFA mock mode"
+    );
+    Ok(id)
+}
+fn schemas(v: &Value) -> Vec<AssetSchema> {
+    if v["bfaMock"] == true {
+        vec![AssetSchema::Nia, AssetSchema::Bfa]
+    } else {
+        vec![AssetSchema::Nia]
+    }
+}
 fn amount(v: &Value) -> Result<u64> {
     let amount: u64 = string(v, "amount")?.parse()?;
     ensure!((1..=25).contains(&amount), "POC amount must be 1..25");
@@ -35,7 +50,8 @@ fn invoice(v: &Value) -> Result<rgb_lib::wallet::InvoiceData> {
     ensure!(
         data.network == BitcoinNetwork::Testnet
             && data.assignment == Assignment::Fungible(amount(v)?)
-            && data.asset_id.as_deref() == Some(ASSET),
+            && (data.asset_id.as_deref() == Some(asset(v)?)
+                || (data.asset_id.is_none() && v["allowGenericAsset"] == true)),
         "Wrong invoice network/asset/amount"
     );
     ensure!(
@@ -176,7 +192,7 @@ fn inspect(v: &Value) -> Result<Value> {
     let prepared = prepare(v)?;
     let plan = prepared.signing_plan();
     let psbt = Psbt::from_str(string(v, "psbt")?)?;
-    let mut result = json!({"purpose":"testnet3-nia-ui", "messages":plan.iter().map(|p| json!({"content":hex::encode(p.digest),"inputIndex":p.input_index})).collect::<Vec<_>>(),
+    let mut result = json!({"purpose":"testnet3-asset-ui", "rgbAssetId":asset(v)?, "messages":plan.iter().map(|p| json!({"content":hex::encode(p.digest),"inputIndex":p.input_index})).collect::<Vec<_>>(),
         "assetId":"BTC_TEST", "vaultId":"2", "publicKey":plan[0].public_key.to_string(),
         "feeSat":prepared.fee_sat(), "txid":psbt.unsigned_tx.compute_txid().to_string(),
         "inputs":psbt.unsigned_tx.input.iter().map(|i| json!({"txid":i.previous_output.txid.to_string(),"vout":i.previous_output.vout})).collect::<Vec<_>>()});
@@ -227,7 +243,7 @@ fn wallet(v: &Value) -> Result<Value> {
             bitcoin_network: BitcoinNetwork::Testnet,
             database_type: DatabaseType::Sqlite,
             max_allocations_per_utxo: 5,
-            supported_schemas: vec![AssetSchema::Nia],
+            supported_schemas: schemas(v),
             reuse_addresses: true,
         },
         registration.wallet_id.to_string(),
@@ -244,17 +260,28 @@ fn wallet(v: &Value) -> Result<Value> {
         indexer_url: string(v, "indexerUrl")?.into(),
         skip_consistency_check: false,
         vanilla_sync_lookback: 20,
-        eth_rpc_url: None,
+        eth_rpc_url: v["ethRpcUrl"].as_str().map(str::to_owned),
     })?;
-    match string(v, "command")? {
-        "status" => {
-            wallet.refresh(online, None, vec![], false)?;
-            Ok(json!({"assets":wallet.list_assets(vec![AssetSchema::Nia])?,
-                "transfers":wallet.list_transfers(AssetFilter::AnyOrNone,None)?,
-                "unspents":wallet.list_unspents(Some(online),false,false)?}))
-        }
+    let selected_asset = asset(v)?;
+    let command = string(v, "command")?;
+    if command == "status" {
+        wallet.refresh(online, None, vec![], false)?;
+    }
+    let assets = wallet.list_assets(schemas(v))?;
+    let known = assets
+        .nia
+        .as_ref()
+        .is_some_and(|rows| rows.iter().any(|a| a.asset_id == selected_asset))
+        || assets
+            .bfa
+            .as_ref()
+            .is_some_and(|rows| rows.iter().any(|a| a.asset_id == selected_asset));
+    match command {
+        "status" => Ok(json!({"assets":assets,
+                "transfers":if known { wallet.list_transfers(AssetFilter::Id(asset(v)?.into()),None)? } else { vec![] },
+                "unspents":wallet.list_unspents(Some(online),false,false)?})),
         "witness" => Ok(serde_json::to_value(wallet.witness_receive(
-            Some(ASSET.into()),
+            known.then(|| selected_asset.into()),
             Assignment::Fungible(amount(v)?),
             v["expiration"].as_u64().context("Missing expiry")?,
             vec!["rpcs://proxy.iriswallet.com/0.2/json-rpc".into()],
@@ -279,7 +306,7 @@ fn wallet(v: &Value) -> Result<Value> {
             };
             Ok(serde_json::to_value(wallet.send_begin(
                 online,
-                HashMap::from([(ASSET.into(), vec![recipient])]),
+                HashMap::from([(asset(v)?.into(), vec![recipient])]),
                 false,
                 2,
                 1,
@@ -316,6 +343,27 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn first_receipt_allows_generic_asset_only_with_explicit_internal_opt_in() {
+        let recipient = "tb3:utxob:7TjnbTy5-H~OndMD-98vlg7F-Fp1VnAt-8J5Ju_P-F~X03DP-kVVUC";
+        let make = |asset: &str| {
+            format!(
+                "{asset}/~/ae/{recipient}?assignment_name=assetOwner&expiry=2000000000&endpoints=rpcs://proxy.iriswallet.com/0.2/json-rpc"
+            )
+        };
+        let mut value =
+            json!({"invoice":make("rgb:~"), "amount":"1", "assetId":ASSET, "bfaMock":true});
+        assert!(invoice(&value).is_err());
+        value["allowGenericAsset"] = json!(true);
+        assert!(invoice(&value).unwrap().asset_id.is_none());
+        value["amount"] = json!("2");
+        assert!(invoice(&value).is_err());
+        value["amount"] = json!("1");
+        value["invoice"] = json!(make(ASSET));
+        value["assetId"] = json!("rgb:another-asset");
+        assert!(invoice(&value).is_err());
+    }
     use rgb_lib::bitcoin::{
         Amount, OutPoint, ScriptBuf, TxIn, TxOut, Txid, absolute,
         hashes::Hash,
