@@ -30,6 +30,8 @@ async fn main() -> anyhow::Result<()> {
 
     let contents = std::fs::read_to_string(args.config)?;
     let cfg: Config = toml::from_str(&contents)?;
+    cfg.wallet.net()?;
+    cfg.wallet.supported_schemas()?;
 
     let tasker = TaskTracker::new();
     let cancel = CancellationToken::new();
@@ -38,9 +40,13 @@ async fn main() -> anyhow::Result<()> {
     // (xpub headers); this service never holds mnemonics or signs transactions.
     let ctx = WalletCtx::new(cfg.wallet.clone(), &tasker);
 
-    let api_service = WalletSrv { ctx };
+    let mpc = rgb_node_api::mpc::MpcService::new(
+        cfg.wallet.clone(),
+        std::env::var("RGB_MPC_SERVICE_TOKEN").ok(),
+    )?;
+    let api_service = WalletSrv { ctx, mpc };
     log::info!("Spawn api jobs");
-    api_service.spawn_jobs(cancel.clone());
+    tasker.spawn(api_service.spawn_jobs(cancel.clone()));
 
     log::info!("Run HTTP server");
     server::run_server(cfg.api, cancel.clone(), api_service, None).await?;

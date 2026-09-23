@@ -13,6 +13,8 @@ on:
 env:
   CARGO_TERM_COLOR: always
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+  # Keep the intentional sibling path patch reproducible on fresh runners.
+  RGB_LIB_REV: "3828a59affb528884daf77a68005194e78fb9c81"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -22,37 +24,39 @@ jobs:
   lint:
     name: rustfmt + clippy
     runs-on: ubuntu-latest
+    env:
+      BFA_MIRRORS_TOKEN: ${{ secrets.BFA_MIRRORS_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+      - name: Prepare pinned RGB dependencies
+        run: bash .github/scripts/prepare-rgb-deps.sh
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           components: rustfmt, clippy
           cache: true
-      # rgb-lib is declared as an ssh:// git dependency but the repo is public,
-      # so rewrite to anonymous HTTPS to fetch it without any SSH key/secret.
-      - name: Configure git for cargo git deps
-        run: git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
       - name: cargo fmt --check
         run: cargo fmt --all -- --check
       - name: cargo clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   check-and-test:
     name: cargo check + test
     runs-on: ubuntu-latest
+    env:
+      BFA_MIRRORS_TOKEN: ${{ secrets.BFA_MIRRORS_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+      - name: Prepare pinned RGB dependencies
+        run: bash .github/scripts/prepare-rgb-deps.sh
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           cache: true
-      - name: Configure git for cargo git deps
-        run: git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
       - name: cargo check
-        run: cargo check --all-targets
+        run: cargo check --workspace --all-targets --locked
       - name: cargo test
-        run: cargo test --all-targets
+        run: cargo test --workspace --all-targets --locked
 
   docker:
     name: build + push image

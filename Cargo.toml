@@ -12,7 +12,7 @@ resolver = "3"
 # different revisions — the wallet descriptors they derive must match exactly
 # or client-side signatures will not validate server-side.
 [workspace.dependencies]
-rgb-lib = { git = "ssh://git@github.com/UTEXO-Protocol/rgb-lib.git", branch = "dev", default-features = false, features = ["electrum", "esplora"] }
+rgb-lib = { git = "ssh://git@github.com/UTEXO-Protocol/rgb-lib.git", rev = "66e558cef0a562a6234639d0641caea30f4d4382", default-features = false, features = ["electrum", "esplora", "mpc"] }
 
 [dependencies]
 actix = "0.13.5"
@@ -37,6 +37,10 @@ rust-embed = { version = "8.3.0", features = [
 ] }
 sentry-actix = "0.34.0"
 serde = { version = "1.0.197", features = ["derive"] }
+serde_json = "1.0"
+subtle = "2.6.1"
+tempfile = "3.27.0"
+uuid = { version = "1.23.5", features = ["v4", "serde"] }
 serde_valid = { version = "1.0.5", features = ["toml"] }
 tokio = { version = "1.43.0", default-features = false, features = ["full"] }
 tokio-util = { version = "0.7.10", default-features = false, features = [
@@ -45,5 +49,17 @@ tokio-util = { version = "0.7.10", default-features = false, features = [
 toml = "0.9.6"
 
 [dev-dependencies]
-# pins the wire format of the response models in tests
-serde_json = "1.0"
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "json"] }
+
+# Coordinated local development: consume MPC changes in the sibling checkout.
+# Replace this override with a reviewed git revision when publishing the POC.
+[patch."ssh://git@github.com/UTEXO-Protocol/rgb-lib.git"]
+rgb-lib = { path = "../rgb-lib" }
+
+# Cargo ignores patches declared by dependencies. Keep the BFA mirrors aligned
+# with the pinned rgb-lib revision in this workspace root as well.
+[patch.crates-io]
+rgb-consensus = { git = "https://github.com/UTEXO-Protocol/rgb-consensus-s-bfa", rev = "2faf6118b2f5fe30dd90dd5244d5a7dc32bcd757" }
+rgb-ops = { git = "https://github.com/UTEXO-Protocol/rgb-ops-s-bfa", rev = "773766b5ca7a9e705ec68c2f9ed0917f505cd6e3" }
+rgb-invoicing = { git = "https://github.com/UTEXO-Protocol/rgb-ops-s-bfa", rev = "773766b5ca7a9e705ec68c2f9ed0917f505cd6e3" }
+rgb-schemas = { git = "https://github.com/UTEXO-Protocol/rgb-schemas-s-bfa", rev = "238dfe7a89db998107fd87d919bf2757a2746d7f" }

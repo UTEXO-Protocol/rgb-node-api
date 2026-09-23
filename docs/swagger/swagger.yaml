@@ -311,6 +311,149 @@ paths:
           $ref: '#/components/responses/InternalError'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
+  /wallet/issueassetbfa:
+    post:
+      summary: Issue BFA genesis (zero token supply)
+      description: Requires wallet.bfa_enabled and eth_rpc_url. Bridge address is immutable.
+      operationId: issue_asset_bfa_wallet_issueassetbfa_post
+      parameters:
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueAssetBfaRequestModel'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetBfa'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /wallet/bridgebegin:
+    post:
+      summary: Prepare BFA bridge mint
+      description: Returns an unsigned PSBT and RGB operation ID; save both before creating EVM evidence. Requires BFA opt-in.
+      operationId: bridge_begin_wallet_bridgebegin_post
+      parameters:
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BridgeBeginRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BridgeBeginResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /wallet/bridgeend:
+    post:
+      summary: Complete BFA bridge mint
+      description: Broadcasts the externally signed saved bridge PSBT. Matching EVM FundsIn evidence must exist before submission.
+      operationId: bridge_end_wallet_bridgeend_post
+      parameters:
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendAssetEndRequestModel'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /wallet/issueassetnia:
     post:
       summary: Issue Asset Nia
@@ -1141,6 +1284,55 @@ components:
         - balance
         - media
       title: AssetNia
+    AssetBfa:
+      properties:
+        asset_id:
+          type: string
+          title: Asset Id
+        ticker:
+          type: string
+          title: Ticker
+        name:
+          type: string
+          title: Name
+        details:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Details
+        precision:
+          type: integer
+          title: Precision
+        initial_supply:
+          type: integer
+          title: Initial Supply (zero at genesis)
+        timestamp:
+          type: integer
+          title: Timestamp
+        added_at:
+          type: integer
+          title: Added At
+        balance:
+          $ref: '#/components/schemas/Balance'
+        reject_list_url:
+          type: [string, "null"]
+        media:
+          anyOf:
+            - $ref: '#/components/schemas/Media'
+            - type: 'null'
+      type: object
+      required:
+        - asset_id
+        - ticker
+        - name
+        - details
+        - precision
+        - initial_supply
+        - timestamp
+        - added_at
+        - balance
+        - media
+      title: AssetBfa
     AssetUda:
       properties:
         asset_id:
@@ -1191,6 +1383,10 @@ components:
       title: AssetUda
     Assets:
       properties:
+        bfa:
+          type: [array, "null"]
+          items:
+            $ref: "#/components/schemas/AssetBfa"
         nia:
           anyOf:
             - items:
@@ -1388,6 +1584,60 @@ components:
       required:
         - changed
       title: FailTransferResponse
+    IssueAssetBfaRequestModel:
+      type: object
+      additionalProperties: false
+      required: [ticker, name, precision, bridge_rights, contract_address]
+      properties:
+        ticker:
+          type: string
+        name:
+          type: string
+        precision:
+          type: integer
+          minimum: 0
+          maximum: 255
+        bridge_rights:
+          type: integer
+          minimum: 1
+          maximum: 255
+        contract_address:
+          type: string
+          description: Immutable Ethereum bridge location committed to genesis.
+    BridgeBeginRequest:
+      type: object
+      additionalProperties: false
+      required: [asset_id, recipient, fee_rate, min_confirmations]
+      properties:
+        asset_id:
+          type: string
+        recipient:
+          $ref: '#/components/schemas/Recipient'
+        fee_rate:
+          type: integer
+        min_confirmations:
+          type: integer
+    BridgeBeginResult:
+      type: object
+      required: [psbt, batch_transfer_idx, details]
+      properties:
+        psbt:
+          type: string
+        batch_transfer_idx:
+          type: [integer, "null"]
+        details:
+          type: object
+          required: [fascia_path, min_confirmations, entropy, opid]
+          properties:
+            fascia_path:
+              type: string
+            min_confirmations:
+              type: integer
+            entropy:
+              type: integer
+            opid:
+              type: string
+              description: RGB transition ID matched against EVM FundsIn evidence.
     IssueAssetNiaRequestModel:
       properties:
         amounts:
@@ -1573,14 +1823,18 @@ components:
           type: integer
           title: Duration Seconds
           description: >-
-            How long the invoice stays valid, in seconds from now. Send `null`
-            for an invoice that never expires.
+            How long the invoice stays valid, in seconds from now. Omitted or
+            null values use 3600 seconds. Unbounded invoices are not supported.
           default: 3600
       type: object
       title: RgbInvoiceRequestModel
       description: Request model for RGB invoices.
     SendAssetBeginRequestModel:
       properties:
+        expiration_timestamp:
+          type: integer
+          minimum: 1
+          description: Absolute Unix expiry from the recipient invoice; earliest expiry for a batch.
         recipient_map:
           additionalProperties:
             items:
@@ -1603,6 +1857,7 @@ components:
       type: object
       required:
         - recipient_map
+        - expiration_timestamp
       title: SendAssetBeginRequestModel
     SendAssetEndRequestModel:
       properties:

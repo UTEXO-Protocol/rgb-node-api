@@ -7,6 +7,16 @@ use the begin/end flow to sign PSBTs client-side.
 
 - **Node/SDK API** (`/wallet/`) -- register watch-only wallets, read state, and use
   begin/end endpoints for external signing (the client holds the keys)
+- **Internal MPC API** (`/internal/mpc/`) -- Gateway-authenticated public-key registration,
+  witness invoices, NIA/BFA receiving (BFA opt-in) and capability-based external sends.
+
+`GET /internal/mpc/wallets/{id}/assets` returns nullable `btc_balance`: `colored`
+and `vanilla`, each with exact satoshi strings for `settled`, `future`, `spendable`.
+These preserve rgb-lib accounting (currently equal UTXO totals per keychain).
+Unavailable BTC is `null`; no confirmed/pending classification is added.
+
+The MPC POC currently uses the sibling `../rgb-lib` checkout via an explicit Cargo
+patch. Keep both repositories together; the baseline git pin remains in Cargo.toml.
 
 ## Running
 
@@ -25,17 +35,38 @@ port = 34000
 
 [wallet]
 data_dir = "./rgb-data"
-network = "regtest"
+network = "regtest" # See docs/NETWORKS.md for supported networks
 btc_rpc_address = "127.0.0.1:18443"
 btc_rpc_user = "dev"
 btc_rpc_password = "dev"
 indexer_address = "tcp://127.0.0.1:50001"
 proxy_address = ["rpc://127.0.0.1:3000/json-rpc"]
+# Optional BFA support:
+# bfa_enabled = true
+# eth_rpc_url = "<trusted EVM RPC URL>"
+
+# Optional external-send policy (defaults):
+[wallet.mpc_send]
+max_amount = 25
+fee_rate_sat_vb = 2
+max_fee_sat = 2000
+max_inputs = 10
+min_confirmations = 1
+min_invoice_validity_secs = 120
 ```
 
 Wallets are not configured in the file — they are registered at runtime via
 `POST /wallet/register` with the `xpub-van`, `xpub-col`, and `master-fingerprint`
 headers.
+
+Send journals retain their policy across configuration changes; older journals
+use the defaults above. Reconcile pending sends before changing proxy settings.
+Use separate instances/state directories per [Bitcoin network](docs/NETWORKS.md).
+
+External sends support one RGB P2WPKH address and blind recipients, with commitment
+and owned-change outputs. Wallet `external_send` reports `"p2wpkh_blind"` or `null`;
+`signing: false` means no server signer. See the
+[provider contract and limits](docs/EXTERNAL_WALLETS.md).
 
 ## API Reference
 
@@ -69,6 +100,9 @@ The begin/end pattern allows clients to sign PSBTs externally:
 | POST | `/listtransfers` | List RGB transfers for an asset |
 | POST | `/blindreceive` | Generate RGB invoice |
 | POST | `/issueassetnia` | Issue new NIA token |
+| POST | `/issueassetbfa` | Issue BFA genesis with bridge rights and zero token supply (opt-in) |
+| POST | `/bridgebegin` | Prepare BFA mint PSBT and operation ID for EVM evidence |
+| POST | `/bridgeend` | Broadcast the externally signed saved mint PSBT |
 | POST | `/createutxosbegin` | Create UTXOs (unsigned PSBT) |
 | POST | `/createutxosend` | Finalize UTXO creation (signed PSBT) |
 | POST | `/sendbegin` | Send RGB token (unsigned PSBT) |
@@ -80,3 +114,8 @@ The begin/end pattern allows clients to sign PSBTs externally:
 A root-level `POST /blindreceive` is also registered as a legacy alias for
 `POST /wallet/blindreceive`. It is marked for removal in the source and should
 not be used — integrators should call `/wallet/blindreceive`.
+
+BFA requires `wallet.bfa_enabled = true` and `wallet.eth_rpc_url` for xpub/MPC
+wallets, including ordinary incoming transfers. Recover uncertain operations from
+their saved transactions. BFAMOCK uses synthetic evidence without ERC-20 backing;
+see the workspace's `wallet-gateway/docs/BFA_MOCK.md`.

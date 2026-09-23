@@ -1,0 +1,17 @@
+services:
+  bitcoind:
+    image: registry.gitlab.com/hashbeam/docker/bitcoind:30.2
+    command: "-fallbackfee=0.0002"
+    ports:
+      - "127.0.0.1:19443:18443"
+  electrs:
+    image: registry.gitlab.com/hashbeam/docker/electrs:0.11.0
+    restart: on-failure
+    ports:
+      - "127.0.0.1:51011:50001"
+    depends_on:
+      - bitcoind
+  proxy:
+    image: ghcr.io/rgb-tools/rgb-proxy-server:0.3.0
+    ports:
+      - "127.0.0.1:31010:3000"

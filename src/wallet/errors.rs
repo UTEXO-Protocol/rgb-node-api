@@ -61,7 +61,7 @@ pub fn error_kind(err: &Error) -> String {
 
 /// Classify an `rgb_lib::Error`.
 ///
-/// The match is deliberately exhaustive: rgb-lib is tracked from a git branch,
+/// The match is deliberately exhaustive: rgb-lib is pinned to a git revision,
 /// so an upgrade that adds a variant must fail to compile here instead of
 /// silently landing in some catch-all bucket.
 pub fn classify(err: &Error) -> ErrorClass {
@@ -108,10 +108,13 @@ pub fn classify(err: &Error) -> ErrorClass {
         | Error::CannotChangeOnline
         | Error::CannotDeleteBatchTransfer
         | Error::CannotFailBatchTransfer
+        | Error::CannotProvideOutOfBandAck { .. }
+        | Error::CannotProvideOutOfBandConsignment { .. }
         | Error::FileAlreadyExists { .. }
         | Error::MultisigOperationInProgress
         | Error::MultisigTransferStatusMismatch
         | Error::RecipientIDAlreadyUsed
+        | Error::WalletSettingMismatch { .. }
         | Error::WalletDirAlreadyExists { .. } => ErrorClass::Conflict,
 
         // -- asked for something this wallet cannot do -----------------------
@@ -119,6 +122,8 @@ pub fn classify(err: &Error) -> ErrorClass {
         | Error::CannotUseIfaOnMainnet
         | Error::NoSupportedSchemas
         | Error::UnsupportedBackupVersion { .. }
+        | Error::UnsupportedWalletManifestVersion { .. }
+        | Error::UnsupportedBridge { .. }
         | Error::UnsupportedBurn { .. }
         | Error::UnsupportedInflation { .. }
         | Error::UnsupportedLayer1 { .. }
@@ -146,6 +151,7 @@ pub fn classify(err: &Error) -> ErrorClass {
         Error::Database { .. }
         | Error::Inconsistency { .. }
         | Error::InexistentDataDir
+        | Error::InexistentWalletManifest { .. }
         | Error::Internal { .. }
         | Error::IO { .. }
         | Error::MultisigCannotMarkOperationProcessed { .. }
@@ -172,6 +178,7 @@ pub fn classify(err: &Error) -> ErrorClass {
         | Error::InvalidCosigner { .. }
         | Error::InvalidDetails { .. }
         | Error::InvalidElectrum { .. }
+        | Error::InvalidEthRpcUrl { .. }
         | Error::InvalidEstimationBlocks
         | Error::InvalidExpiration
         | Error::InvalidFilePath { .. }
@@ -194,6 +201,10 @@ pub fn classify(err: &Error) -> ErrorClass {
         | Error::NoInflationAmounts
         | Error::NoIssuanceAmounts
         | Error::NoKeysSupplied
+        | Error::NoMaxAllocationsPerUtxo
+        | Error::NoBridgeRights
+        | Error::MissingBurnRecipient
+        | Error::InvalidBurnRecipient { .. }
         | Error::OutputBelowDustLimit
         | Error::TooHighInflationAmounts
         | Error::TooHighIssuanceAmounts

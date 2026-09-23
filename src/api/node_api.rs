@@ -64,7 +64,7 @@ impl FromRequest for XWalletKey {
 /// get a 4xx with the rgb-lib message and a `kind` detail holding the variant
 /// name, so clients can react without parsing prose. Only genuine server-side
 /// failures stay a 500 with an opaque message.
-fn map_rgb_error(err: rgb_lib::Error) -> ApiError {
+pub(super) fn map_rgb_error(err: rgb_lib::Error) -> ApiError {
     let class = classify(&err);
     let kind = error_kind(&err);
 
@@ -302,6 +302,37 @@ pub async fn create_utxos_end(
         .await
         .map_err(map_rgb_error)?;
     Ok(Json(CreateUtxosRes { created }))
+}
+
+pub async fn issue_bfa(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+    req: Json<IssueBfaReq>,
+) -> Result<Json<rgb_lib::wallet::AssetBFA>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    Ok(Json(
+        ctx.issue_bfa_token(req.0).await.map_err(map_rgb_error)?,
+    ))
+}
+pub async fn bridge_begin(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+    req: Json<BridgeBeginReq>,
+) -> Result<Json<rgb_lib::wallet::BridgeBeginResult>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    Ok(Json(ctx.bridge_begin(req.0).await.map_err(map_rgb_error)?))
+}
+pub async fn bridge_end(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+    req: Json<SendAssetEndReq>,
+) -> Result<Json<rgb_lib::wallet::OperationResult>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    Ok(Json(
+        ctx.bridge_end(req.0.signed_psbt)
+            .await
+            .map_err(map_rgb_error)?,
+    ))
 }
 
 pub async fn issue_nia(

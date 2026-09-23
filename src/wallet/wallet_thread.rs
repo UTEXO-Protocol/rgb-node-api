@@ -76,6 +76,18 @@ pub(crate) enum WalletCmd {
         req: ReceiveReq,
         resp: ResultChan<wallet::ReceiveData>,
     },
+    IssueBfaToken {
+        req: IssueBfaReq,
+        resp: ResultChan<wallet::AssetBFA>,
+    },
+    BridgeBegin {
+        req: BridgeBeginReq,
+        resp: ResultChan<wallet::BridgeBeginResult>,
+    },
+    BridgeEnd {
+        psbt: String,
+        resp: ResultChan<wallet::OperationResult>,
+    },
     IssueNiaToken {
         req: IssueNiaReq,
         resp: ResultChan<wallet::AssetNIA>,
@@ -133,6 +145,9 @@ impl std::fmt::Display for WalletCmd {
             WalletCmd::BtcBalance { .. } => "BtcBalance",
             WalletCmd::TokenBalance { .. } => "TokenBalance",
             WalletCmd::Receive { .. } => "Receive",
+            WalletCmd::IssueBfaToken { .. } => "IssueBfaToken",
+            WalletCmd::BridgeBegin { .. } => "BridgeBegin",
+            WalletCmd::BridgeEnd { .. } => "BridgeEnd",
             WalletCmd::IssueNiaToken { .. } => "IssueNiaToken",
             WalletCmd::CreateUtxoBegin { .. } => "CreateUtxoBegin",
             WalletCmd::CreateUtxoEnd { .. } => "CreateUtxoEnd",
@@ -349,7 +364,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                 .lock()
                 .unwrap()
                 .wallet
-                .list_transfers(wallet::AssetFilter::Any, None)
+                .list_transfers(wallet::AssetFilter::AnyOrNone, None)
             {
                 Ok(val) => resp.send(Ok(val)).is_ok(),
                 Err(err) => {
@@ -382,7 +397,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                 .lock()
                 .unwrap()
                 .wallet
-                .list_transfers(wallet::AssetFilter::Any, None)
+                .list_transfers(wallet::AssetFilter::AnyOrNone, None)
                 .map(|transfers| {
                     transfers
                         .into_iter()
@@ -536,7 +551,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                 req.donation,
                 req.fee_rate,
                 req.min_confirmations,
-                None,
+                req.expiration_timestamp,
                 false,
                 None,
             ) {
@@ -587,6 +602,35 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                     resp.send(Err(err)).is_ok()
                 }
             }
+        }
+        WalletCmd::IssueBfaToken { req, resp } => {
+            let w = wallet_state.lock().unwrap();
+            resp.send(w.wallet.issue_asset_bfa(
+                req.ticker,
+                req.name,
+                req.precision,
+                req.bridge_rights,
+                req.contract_address,
+                None,
+            ))
+            .is_ok()
+        }
+        WalletCmd::BridgeBegin { req, resp } => {
+            let mut w = wallet_state.lock().unwrap();
+            let online = w.wallet_online;
+            resp.send(w.wallet.bridge_begin(
+                online,
+                req.asset_id,
+                req.recipient.into(),
+                req.fee_rate,
+                req.min_confirmations,
+            ))
+            .is_ok()
+        }
+        WalletCmd::BridgeEnd { psbt, resp } => {
+            let mut w = wallet_state.lock().unwrap();
+            let online = w.wallet_online;
+            resp.send(w.wallet.bridge_end(online, psbt)).is_ok()
         }
         WalletCmd::IssueNiaToken { req, resp } => {
             let w = wallet_state.lock().unwrap();
