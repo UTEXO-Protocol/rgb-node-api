@@ -2,8 +2,8 @@
 use crate::{
     api_core::api_errors::{ApiError, ApiErrorCode, error_with, internal_server_error},
     mpc::{
-        MpcError, MpcService, Owner, Registration, SendRequest, SendView, WalletView,
-        WitnessInvoice, WitnessRequest,
+        BlindInvoice, BlindRequest, MpcError, MpcService, Owner, Registration, SendRequest,
+        SendView, WalletView,
     },
 };
 use actix_web::{
@@ -80,10 +80,7 @@ pub(super) fn scope(service: MpcService) -> Scope {
         .app_data(Data::new(service))
         .route("/wallets", web::post().to(register))
         .route("/wallets/{wallet_id}", web::get().to(wallet))
-        .route(
-            "/wallets/{wallet_id}/witness-invoices",
-            web::post().to(witness),
-        )
+        .route("/wallets/{wallet_id}/blind-invoices", web::post().to(blind))
         .route("/wallets/{wallet_id}/assets", web::get().to(assets))
         .route("/wallets/{wallet_id}/transfers", web::get().to(transfers))
         .route("/wallets/{wallet_id}/refresh", web::post().to(refresh))
@@ -197,15 +194,15 @@ async fn wallet(
             .map_err(map_error)?,
     ))
 }
-async fn witness(
+async fn blind(
     service: Data<MpcService>,
     GatewayCaller(owner): GatewayCaller,
     id: Path<String>,
-    request: Json<WitnessRequest>,
-) -> Result<Json<WitnessInvoice>, ApiError> {
+    request: Json<BlindRequest>,
+) -> Result<Json<BlindInvoice>, ApiError> {
     Ok(Json(
         service
-            .witness(owner, wallet_id(id)?, request.0)
+            .blind(owner, wallet_id(id)?, request.0)
             .await
             .map_err(map_error)?,
     ))

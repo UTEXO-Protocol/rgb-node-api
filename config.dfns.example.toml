@@ -16,7 +16,6 @@ indexer_address = "127.0.0.1:60601"
 proxy_address = ["rpc://127.0.0.1:31016/json-rpc"]
 
 [wallet.mpc_send]
-carrier_sat = 1000
 max_amount = 25
 fee_rate_sat_vb = 2
 max_fee_sat = 2000

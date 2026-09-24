@@ -21,6 +21,7 @@ pub struct Config {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct MpcSendPolicy {
+    /// Retained only to validate previously saved split-change operations.
     pub carrier_sat: u64,
     pub max_amount: u64,
     pub fee_rate_sat_vb: u64,

@@ -15,7 +15,7 @@ use rgb_lib::{
     keys::{WitnessVersion, generate_keys},
     wallet::{
         DatabaseType, Invoice, MpcWallet, OnlineOptions, Recipient, RgbWalletOpsOffline,
-        RgbWalletOpsOnline, SinglesigKeys, Wallet, WalletData, WitnessData,
+        RgbWalletOpsOnline, SinglesigKeys, Wallet, WalletData,
     },
 };
 use rgb_node_api::mpc::{MpcService, RegistryProvider, SendRequest};
@@ -230,20 +230,63 @@ fn two_role_receive_send_twice_restart_and_spend_vanilla() {
     let service = MpcService::new(cfg.clone(), Some(TOKEN.into())).unwrap();
     rt.block_on(service.register(owner(), registration.clone()))
         .unwrap();
-    let mut req = witness();
+    let mut req = blind();
     req.asset_id = Some(asset.asset_id.clone());
     req.amount = Some("100".into());
+    assert!(matches!(
+        rt.block_on(service.blind(owner(), id, req.clone())),
+        Err(rgb_node_api::mpc::MpcError::Rgb(
+            rgb_lib::Error::InsufficientAllocationSlots
+        ))
+    ));
+    // Blind receive needs an existing External UTXO. Use a small one so the
+    // first RGB send also needs the independent Internal funding key.
+    bitcoin.rpc(
+        "sendtoaddress",
+        json!([registration.addresses[0].address, 0.00000330]),
+        true,
+    );
+    bitcoin.mine(1);
+    wait(|| {
+        rt.block_on(service.asset_snapshot(owner(), id))
+            .unwrap()
+            .1
+            .unwrap()
+            .colored
+            .spendable
+            == 330
+    });
     let receive = rt
-        .block_on(service.witness(owner(), id, req.clone()))
+        .block_on(service.blind(owner(), id, req.clone()))
         .unwrap();
     assert_eq!(
         receive.invoice,
-        rt.block_on(service.witness(owner(), id, req))
+        rt.block_on(service.blind(owner(), id, req.clone()))
             .unwrap()
             .invoice
     );
+    drop(service);
+    let record_path = receiver_dir
+        .path()
+        .join(format!("mpc/registrations/{id}.json"));
+    let mut record: Value = serde_json::from_slice(&std::fs::read(&record_path).unwrap()).unwrap();
+    record["invoices"][req.request_id.to_string()]["result"] = Value::Null;
+    std::fs::write(&record_path, serde_json::to_vec(&record).unwrap()).unwrap();
+    let service = MpcService::new(cfg.clone(), Some(TOKEN.into())).unwrap();
+    assert_eq!(
+        rt.block_on(service.blind(owner(), id, req))
+            .unwrap()
+            .invoice,
+        receive.invoice
+    );
     let data = Invoice::new(receive.invoice).unwrap().invoice_data();
-    // A 1000-sat RGB carrier forces both independent keys into the first send.
+    assert_eq!(data.asset_id.as_deref(), Some(asset.asset_id.as_str()));
+    assert_eq!(data.asset_schema, Some(AssetSchema::Nia));
+    assert!(
+        rgb_lib::utils::script_buf_from_recipient_id(data.recipient_id.clone())
+            .unwrap()
+            .is_none()
+    );
     let begun = source
         .send_begin(
             online,
@@ -252,10 +295,7 @@ fn two_role_receive_send_twice_restart_and_spend_vanilla() {
                 vec![Recipient {
                     recipient_id: data.recipient_id,
                     assignment: Assignment::Fungible(100),
-                    witness_data: Some(WitnessData {
-                        amount_sat: 1000,
-                        blinding: None,
-                    }),
+                    witness_data: None,
                     transport_endpoints: data.transport_endpoints,
                 }],
             )]),
@@ -295,7 +335,7 @@ fn two_role_receive_send_twice_restart_and_spend_vanilla() {
             .blind_receive(
                 Some(asset.asset_id.clone()),
                 Assignment::Fungible(25),
-                witness().expiration_timestamp,
+                blind().expiration_timestamp,
                 cfg.proxy_address.clone(),
                 1,
             )
@@ -309,17 +349,15 @@ fn two_role_receive_send_twice_restart_and_spend_vanilla() {
         let prepared = rt
             .block_on(service.prepare_send(owner(), id, request.clone()))
             .unwrap();
-        assert_eq!(prepared.key_groups.len(), 2);
-        assert_eq!(prepared.change.len(), 2);
         assert_eq!(
-            prepared
-                .change
-                .iter()
-                .find(|c| c.role == rgb_node_api::mpc::Role::Rgb)
-                .unwrap()
-                .amount_sat,
-            "1000"
+            prepared.state,
+            "AWAITING_SIGNATURE",
+            "round {round}: {}",
+            serde_json::to_string(&prepared).unwrap()
         );
+        assert_eq!(prepared.key_groups.len(), if round == 0 { 2 } else { 1 });
+        assert_eq!(prepared.change.len(), 1);
+        assert_eq!(prepared.change[0].role, rgb_node_api::mpc::Role::Fee);
         let psbt = Psbt::from_str(prepared.psbt.as_ref().unwrap()).unwrap();
         if let Some(txid) = prior_txid {
             assert!(
@@ -491,8 +529,35 @@ fn two_role_receive_send_twice_restart_and_spend_vanilla() {
     let source_online = online;
     let online = wallet.go_online(options).unwrap();
     let balances = wallet.get_btc_balance(Some(online), false).unwrap();
-    assert_eq!(balances.colored.spendable, 1000);
+    assert_eq!(balances.colored.spendable, 0);
     assert!(balances.vanilla.spendable > 90_000);
+    // All remaining BTC is on the RGB-bearing Internal output. A plain BTC
+    // spend must reject it even though the address is the funding/change role.
+    assert!(matches!(
+        wallet.send_btc_begin(
+            online,
+            bitcoin.mining_address.clone(),
+            10_000,
+            2,
+            false,
+            true
+        ),
+        Err(rgb_lib::Error::InsufficientBitcoins { .. })
+    ));
+    bitcoin.rpc(
+        "sendtoaddress",
+        json!([registration.addresses[1].address, 0.001]),
+        true,
+    );
+    bitcoin.mine(1);
+    wait(|| {
+        wallet
+            .get_btc_balance(Some(online), false)
+            .unwrap()
+            .vanilla
+            .spendable
+            > 190_000
+    });
     let destination = bitcoin
         .rpc("getnewaddress", json!([]), true)
         .as_str()
@@ -502,13 +567,12 @@ fn two_role_receive_send_twice_restart_and_spend_vanilla() {
         .send_btc_begin(online, destination, 10_000, 2, false, false)
         .unwrap();
     let psbt = Psbt::from_str(&begun).unwrap();
-    assert!(psbt.inputs.iter().all(|i| {
-        i.witness_utxo.as_ref().unwrap().script_pubkey
-            != rgb_lib::bitcoin::Address::from_str(&registration.addresses[0].address)
-                .unwrap()
-                .assume_checked()
-                .script_pubkey()
-    }));
+    assert!(
+        psbt.unsigned_tx
+            .input
+            .iter()
+            .all(|i| Some(i.previous_output.txid) != prior_txid)
+    );
     wallet
         .send_btc_end(online, sign(&begun, &signing_keys, true))
         .unwrap();
@@ -540,7 +604,7 @@ fn two_role_receive_send_twice_restart_and_spend_vanilla() {
             .blind_receive(
                 None,
                 Assignment::Fungible(amount),
-                witness().expiration_timestamp,
+                blind().expiration_timestamp,
                 cfg.proxy_address.clone(),
                 1,
             )
@@ -558,13 +622,8 @@ fn two_role_receive_send_twice_restart_and_spend_vanilla() {
             .block_on(service.prepare_send(owner(), id, request.clone()))
             .unwrap();
         assert_eq!(prepared.state, "AWAITING_SIGNATURE");
-        assert_eq!(
-            prepared
-                .change
-                .iter()
-                .any(|change| change.role == rgb_node_api::mpc::Role::Rgb),
-            retains_other
-        );
+        assert_eq!(prepared.change.len(), 1);
+        assert_eq!(prepared.change[0].role, rgb_node_api::mpc::Role::Fee);
         let signed = sign(prepared.psbt.as_ref().unwrap(), &signing_keys, false);
         rt.block_on(service.finish_send(owner(), id, request.request_id, signed))
             .unwrap();
@@ -603,6 +662,6 @@ fn two_role_receive_send_twice_restart_and_spend_vanilla() {
         }
     }
     println!(
-        "DFNS_REGTEST_RESULT: witness receive=100, two two-key RGB sends=25+25, remaining RGB=50, vanilla BTC spend=10000 sat; unrelated allocation retained when first contract exhausted; final all-asset send omits colored carrier; prepare/submit restart recovered; missing original PSBT preserves prepared fee reservations; no provider calls"
+        "DFNS_REGTEST_RESULT: blind receive=100 after External funding; receive/prepare/submit restarts recovered; two consecutive single Internal change sends=25+25 (two keys then one); Internal RGB change protected from BTC spend; separate BTC input spent=10000 sat; unrelated allocation retained; all assets exhausted; missing original PSBT preserves reservations; no provider calls"
     );
 }

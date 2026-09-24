@@ -2,7 +2,6 @@ mod common;
 use common::*;
 use rgb_lib::BitcoinNetwork;
 use rgb_node_api::mpc::{MpcService, RegistryProvider, SendRequest};
-use serde_json::Value;
 
 #[test]
 fn two_distinct_tweaked_roles_are_required() {
@@ -55,32 +54,19 @@ async fn invalid_prepare_is_durably_rejected_without_reserving_funds() {
 }
 
 #[tokio::test]
-async fn first_asset_invoice_is_bound_and_recovered_after_lost_response() {
-    const ASSET: &str = "rgb:7LVhcazJ-nasAUZr-82RcIkB-OMFsRsS-X5~BbjR-KMkOKdc";
+async fn registration_survives_restart_and_preserves_owner_isolation() {
     let dir = tempfile::tempdir().unwrap();
     let cfg = config(dir.path());
     let request = registration(26);
     let id = request.wallet_id;
     let service = MpcService::new(cfg.clone(), Some(TOKEN.into())).unwrap();
-    service.register(owner(), request).await.unwrap();
-    let mut request = witness();
-    request.asset_id = Some(ASSET.into());
-    let first = service.witness(owner(), id, request.clone()).await.unwrap();
-    let data = rgb_lib::wallet::Invoice::new(first.invoice.clone())
-        .unwrap()
-        .invoice_data();
-    assert_eq!(data.asset_id.as_deref(), Some(ASSET));
-    assert_eq!(data.asset_schema, Some(rgb_lib::AssetSchema::Nia));
+    service.register(owner(), request.clone()).await.unwrap();
     drop(service);
-    let path = dir.path().join(format!("mpc/registrations/{id}.json"));
-    let mut saved: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-    saved["invoices"][request.request_id.to_string()]["result"] = Value::Null;
-    std::fs::write(path, serde_json::to_vec(&saved).unwrap()).unwrap();
     let service = MpcService::new(cfg, Some(TOKEN.into())).unwrap();
-    assert_eq!(
-        service.witness(owner(), id, request).await.unwrap().invoice,
-        first.invoice
-    );
+    let view = service.wallet(owner(), id).await.unwrap();
+    assert!(view.blind_receive);
+    assert!(!view.witness_receive);
+    assert_eq!(view.addresses.len(), 2);
     let other = rgb_node_api::mpc::Owner {
         tenant_id: "poc".into(),
         user_id: "bob".into(),

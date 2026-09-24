@@ -106,6 +106,17 @@ fn change_outputs(
         })
         .collect()
 }
+// Apply the dev output policy only to new preparation. Reconciliation still
+// validates the exact saved transaction, including older split-change journals.
+fn check_new_change(record: &Record, psbt: &Psbt, network: BitcoinNetwork) -> Result<()> {
+    let changes = change_outputs(record, psbt, network)?;
+    if changes.len() > 1 || changes.iter().any(|change| change.role != Role::Fee) {
+        return Err(MpcError::Invalid(
+            "Expected a single Internal change output",
+        ));
+    }
+    Ok(())
+}
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SendRequest {
@@ -249,9 +260,7 @@ fn plan(
             || output.value < output.script_pubkey.minimal_non_dust()
             || (change.role == Role::Rgb && output.value.to_sat() != policy.carrier_sat)
         {
-            return Err(MpcError::Invalid(
-                "Change differs from saved carrier policy",
-            ));
+            return Err(MpcError::Invalid("Change differs from saved policy"));
         }
     }
     let mut verified = Vec::new();
@@ -270,25 +279,25 @@ fn plan(
                     .is_ok_and(|a| a.script_pubkey() == prevout.script_pubkey)
             })
             .ok_or(MpcError::Invalid("Unregistered input"))?;
-        if binding.role == Role::Rgb {
-            let unspent = snapshot
-                .rgb
-                .iter()
-                .find(|u| {
-                    u.utxo.exists
-                        && u.utxo.outpoint.txid == input.previous_output.txid.to_string()
-                        && u.utxo.outpoint.vout == input.previous_output.vout
-                })
-                .ok_or(MpcError::Conflict("Colored input absent from RGB state"))?;
-            if unspent.utxo.btc_amount != prevout.value.to_sat()
+        let rgb = snapshot.rgb.iter().find(|u| {
+            u.utxo.exists
+                && u.utxo.outpoint.txid == input.previous_output.txid.to_string()
+                && u.utxo.outpoint.vout == input.previous_output.vout
+        });
+        if binding.role == Role::Rgb && rgb.is_none() {
+            return Err(MpcError::Conflict("Colored input absent from RGB state"));
+        }
+        // Internal change can carry RGB too. Its address role is not proof
+        // that it is an asset-free BTC input.
+        if let Some(unspent) = rgb
+            && (unspent.utxo.btc_amount != prevout.value.to_sat()
                 || (require_settled
                     && (unspent.pending_blinded != 0
-                        || unspent.rgb_allocations.iter().any(|a| !a.settled)))
-            {
-                return Err(MpcError::Conflict(
-                    "Colored input is pending or differs from node",
-                ));
-            }
+                        || unspent.rgb_allocations.iter().any(|a| !a.settled))))
+        {
+            return Err(MpcError::Conflict(
+                "Colored input is pending or differs from node",
+            ));
         }
         psbt.inputs[index].tap_internal_key =
             Some(XOnlyPublicKey::from_str(&binding.internal_key).map_err(|_| MpcError::Internal)?);
@@ -713,15 +722,9 @@ impl Manager {
             expiry,
             true,
         )?;
-        plan(
-            &record,
-            Psbt::from_str(&dry.psbt).map_err(|_| MpcError::Internal)?,
-            &unspents,
-            true,
-            &asset_id,
-            network,
-            &policy,
-        )?;
+        let dry = Psbt::from_str(&dry.psbt).map_err(|_| MpcError::Internal)?;
+        check_new_change(&record, &dry, network)?;
+        plan(&record, dry, &unspents, true, &asset_id, network, &policy)?;
         let prior_batch_ids = wallet
             .list_transfers(AssetFilter::Id(asset_id.clone()), None)?
             .iter()
@@ -766,6 +769,7 @@ impl Manager {
         )?;
         let mut original = Psbt::from_str(&begun.psbt).map_err(|_| MpcError::Internal)?;
         add_internal_keys(&record, &mut original, network)?;
+        check_new_change(&record, &original, network)?;
         let prepared = plan(
             &record,
             original.clone(),

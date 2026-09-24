@@ -1,6 +1,6 @@
 # External two-role P2TR API, version 1
 
-2026-09-23. This clean branch starts from `95cb8c5715fa7f7f0fc86ce01e9d3bdcaceb33f0` (`main`). It contains the registry and external-signing capability required by Dfns; no provider SDK, passkey, Dynamic or Vault adapter runs in this server. Provider authorization belongs in Gateway. Only NIA is enabled.
+2026-09-24. This clean branch starts from `95cb8c5715fa7f7f0fc86ce01e9d3bdcaceb33f0` (`main`). It contains the registry and external-signing capability required by Dfns; no provider SDK, passkey, Dynamic or Vault adapter runs in this server. Provider authorization belongs in Gateway. Only NIA is enabled.
 
 ## Authentication and registration
 
@@ -35,15 +35,15 @@ Paths are relative to `/wallets/{wallet_id}`:
 | GET `/assets` | Native RGB asset and six colored/vanilla BTC balance fields |
 | GET `/transfers` | Wallet transfers |
 | POST `/refresh` | Synchronize and reconcile |
-| POST `/witness-invoices` | `{request_id, asset_id?, amount?, expiration_timestamp}`; amount is decimal base units, expiry is Unix seconds |
+| POST `/blind-invoices` | `{request_id, asset_id?, amount?, expiration_timestamp}`; amount is decimal base units, expiry is Unix seconds |
 | POST `/sends/prepare` | `{request_id, asset_id, invoice, amount}`; UUID intent, NIA blind recipient only |
 | GET `/sends/{request_id}` | Reconcile the saved operation |
 | POST `/sends/{request_id}/finish` | `{signed_psbt}`; same complete transaction, Base64 PSBT |
 | POST `/sends/{request_id}/cancel` | Cancel only an unsubmitted operation |
 
-A send response contains `version:1`, `wallet_id`, `request_id`, `asset_id`, `invoice`, decimal-string `amount`, `state`, optional `message`, `expires_at`, `txid`, `fee_sat`, Base64 `psbt`, `key_groups:[{signing_key_id,input_indexes}]` and `change:[{role,vout,amount_sat}]`. Group indexes cover every input exactly once. Change is bound to registered roles. Carrier satoshis, fee rate, fee ceiling, maximum amount/inputs, confirmations and preparation expiry margin come from `[wallet.mpc_send]`.
+A send response contains `version:1`, `wallet_id`, `request_id`, `asset_id`, `invoice`, decimal-string `amount`, `state`, optional `message`, `expires_at`, `txid`, `fee_sat`, Base64 `psbt`, `key_groups:[{signing_key_id,input_indexes}]` and `change:[{role,vout,amount_sat}]`. Group indexes cover every input exactly once. New sends retain at most one Internal change output, carrying BTC and any RGB remainder together. Internal RGB inputs are checked against saved allocations and excluded from plain BTC funding. The `fee` role names the registered Internal key, not an assurance that its outputs are RGB-free. Previously saved split transactions retain their original validation policy for recovery. Fee rate, fee ceiling, maximum amount/inputs, confirmations and preparation expiry margin come from `[wallet.mpc_send]`.
 
-Witness receive supports the first unknown contract by persisting a generic receive and binding the public invoice to the immutable requested NIA contract. An invoice alone never moves funds. Repeating the same request returns/reconstructs the same receive, even after a lost response; a different payload with the same ID is rejected.
+Blind receive supports the first unknown contract by persisting a generic receive and binding the public invoice to the immutable requested NIA contract. Before the first invoice, send BTC to the External/RGB address and wait for confirmation. Invoice creation syncs the funded UTXO; an empty wallet cannot blind-receive. An invoice alone never moves funds. Repeating the same request returns/reconstructs the same receive, even after a lost response; a different payload with the same ID is rejected.
 
 Prepare saves the original PSBT, transfer identity, exact node-verified prevouts and RGB allocations. A known rejection before a transfer exists is saved as `FAILED`, with no PSBT, so a new corrected intent can proceed. Unknown outcomes retain their existing journal. Prepared states progress through `AWAITING_SIGNATURE`, `SUBMITTING`, `WAITING_COUNTERPARTY`, `WAITING_CONFIRMATIONS`, `SETTLED`; `PREPARING` is reconciled from saved artifacts. Cancellation/known failure are terminal.
 
@@ -72,4 +72,4 @@ RGB_DFNS_REGTEST=1 cargo test --locked --test dfns_regtest -- --ignored --nocapt
 docker compose -p dfns-isolated -f tests/dfns/compose.yaml down
 ```
 
-The fixture uses fresh keys each run, tests two independent signing groups, repeated send from change, unrelated allocations, no required carrier, vanilla spend, prepare/submit crash recovery, bad signatures and duplicate finish. Registry tests cover unknown-asset receive recovery and owner isolation. This is not live Dfns acceptance.
+The fixture uses fresh keys each run, tests funded blind receive and lost-invoice-response recovery, two independent signing groups on the first send and one on the second, repeated Internal RGB change, unrelated allocations and exhaustion, protection against plain BTC spending of RGB change, spending a separately funded Internal UTXO, prepare/submit crash recovery, bad signatures and duplicate finish. Registry tests cover immutable bindings, restart and owner isolation. This is not live Dfns acceptance.

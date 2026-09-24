@@ -8,7 +8,7 @@ use rgb_lib::{
     },
 };
 use rgb_node_api::{
-    mpc::{Owner, Provider, RegisteredAddress, Registration, Role, ScriptType, WitnessRequest},
+    mpc::{BlindRequest, Owner, Provider, RegisteredAddress, Registration, Role, ScriptType},
     wallet::Config,
 };
 use uuid::Uuid;
@@ -66,8 +66,8 @@ pub fn registration_for_network(seed: u8, network: BitcoinNetwork) -> Registrati
         addresses,
     }
 }
-pub fn witness() -> WitnessRequest {
-    WitnessRequest {
+pub fn blind() -> BlindRequest {
+    BlindRequest {
         request_id: Uuid::new_v4(),
         asset_id: None,
         amount: Some("25".into()),

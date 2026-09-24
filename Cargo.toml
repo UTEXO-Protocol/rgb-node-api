@@ -12,7 +12,7 @@ resolver = "3"
 # different revisions — the wallet descriptors they derive must match exactly
 # or client-side signatures will not validate server-side.
 [workspace.dependencies]
-rgb-lib = { git = "https://github.com/UTEXO-Protocol/rgb-lib", rev = "273d9d5b83f5774d0b86b3bdc7f19186f036bc13", default-features = false, features = ["electrum", "esplora", "mpc"] }
+rgb-lib = { git = "https://github.com/UTEXO-Protocol/rgb-lib", rev = "d8c445f92ccd0eade7f527ac3dc2ccae29e6254f", default-features = false, features = ["electrum", "esplora", "mpc"] }
 
 [dependencies]
 actix = "0.13.5"

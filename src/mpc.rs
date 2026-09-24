@@ -1,4 +1,4 @@
-//! Gateway-only, public-key MPC registry and witness receiving for the NIA POC.
+//! Gateway-only, public-key MPC registry and blind receiving for the NIA POC.
 //! A service credential authenticates the Gateway, which must verify provider
 //! ownership before registering keys. This module never signs transactions.
 use std::{
@@ -152,7 +152,7 @@ pub struct Registration {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct WitnessRequest {
+pub struct BlindRequest {
     pub request_id: Uuid,
     pub asset_id: Option<String>,
     /// Integer base units. None creates an unconstrained receive invoice.
@@ -161,7 +161,7 @@ pub struct WitnessRequest {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct WitnessInvoice {
+pub struct BlindInvoice {
     pub wallet_id: Uuid,
     pub request_id: Uuid,
     pub invoice: String,
@@ -172,8 +172,8 @@ pub struct WitnessInvoice {
 
 #[derive(Clone, Serialize, Deserialize)]
 struct InvoiceRecord {
-    request: WitnessRequest,
-    result: Option<WitnessInvoice>,
+    request: BlindRequest,
+    result: Option<BlindInvoice>,
     #[serde(default)]
     prior_batch_ids: Option<Vec<i32>>,
     #[serde(default)]
@@ -198,6 +198,7 @@ pub struct WalletView {
     pub genesis_hash: String,
     pub addresses: Vec<RegisteredAddress>,
     pub supported_schemas: Vec<String>,
+    pub blind_receive: bool,
     pub witness_receive: bool,
     /// Supported external PSBT contract, independent of provider name or funding.
     pub external_send: Option<SendProfile>,
@@ -414,13 +415,13 @@ impl MpcService {
         })
         .await
     }
-    pub async fn witness(
+    pub async fn blind(
         &self,
         owner: Owner,
         id: Uuid,
-        request: WitnessRequest,
-    ) -> Result<WitnessInvoice> {
-        self.call(id, move |manager| manager.witness(&owner, id, request))
+        request: BlindRequest,
+    ) -> Result<BlindInvoice> {
+        self.call(id, move |manager| manager.blind(&owner, id, request))
             .await
     }
     pub async fn assets(&self, owner: Owner, id: Uuid) -> Result<Assets> {
@@ -804,7 +805,6 @@ impl Manager {
                 request.wallet_id.to_string(),
                 Box::new(provider),
             )?;
-            wallet.set_rgb_carrier_amount(self.config.mpc_send.carrier_sat)?;
             if request
                 .addresses
                 .iter()
@@ -812,7 +812,7 @@ impl Manager {
             {
                 wallet.get_address()?;
             }
-            // Receiving needs only the RGB role, registered atomically with its first invoice.
+            wallet.get_rgb_address()?;
             self.entries.insert(
                 request.wallet_id,
                 Entry {
@@ -891,7 +891,7 @@ impl Manager {
         &mut self,
         record: &Record,
         pending: &InvoiceRecord,
-    ) -> Result<Option<WitnessInvoice>> {
+    ) -> Result<Option<BlindInvoice>> {
         let Some(before) = &pending.prior_batch_ids else {
             return Ok(None);
         };
@@ -926,19 +926,12 @@ impl Manager {
             .map_err(|_| MpcError::Internal)?
             .map(Assignment::Fungible)
             .unwrap_or(Assignment::Any);
-        let address = record
-            .registration
-            .addresses
-            .iter()
-            .find(|a| a.role == Role::Rgb)
-            .ok_or(MpcError::Internal)?;
-        if transfer.kind != rgb_lib::wallet::TransferKind::ReceiveWitness
+        if transfer.kind != rgb_lib::wallet::TransferKind::ReceiveBlind
             || data.asset_id != pending.request.asset_id
             || data.assignment != expected
             || data.expiration_timestamp != Some(pending.request.expiration_timestamp)
             || data.network != self.network
-            || rgb_lib::utils::script_buf_from_recipient_id(data.recipient_id.clone())?
-                != Some(checked_address(address, self.network)?.script_pubkey())
+            || rgb_lib::utils::script_buf_from_recipient_id(data.recipient_id.clone())?.is_some()
             || data.transport_endpoints.len() != self.config.proxy_address.len()
             || !data
                 .transport_endpoints
@@ -950,7 +943,7 @@ impl Manager {
                 "Recovered invoice differs from its saved request",
             ));
         }
-        Ok(Some(WitnessInvoice {
+        Ok(Some(BlindInvoice {
             wallet_id: record.registration.wallet_id,
             request_id: pending.request.request_id,
             invoice,
@@ -960,12 +953,7 @@ impl Manager {
         }))
     }
 
-    fn witness(
-        &mut self,
-        owner: &Owner,
-        id: Uuid,
-        request: WitnessRequest,
-    ) -> Result<WitnessInvoice> {
+    fn blind(&mut self, owner: &Owner, id: Uuid, request: BlindRequest) -> Result<BlindInvoice> {
         let mut record = self.owned(owner, id)?;
         if let Some(previous) = record.invoices.get(&request.request_id) {
             if previous.request != request {
@@ -1026,12 +1014,26 @@ impl Manager {
             }
         };
         let endpoints = self.config.proxy_address.clone();
-        // This POC pins one RGB address, so each invoice needs the library's
-        // transport nonce. Out-of-band address reuse is not exposed here.
         if endpoints.is_empty() {
             return Err(MpcError::Invalid("A configured RGB transport is required"));
         }
+        let options = OnlineOptions {
+            indexer_url: self.config.indexer_address.clone(),
+            skip_consistency_check: false,
+            vanilla_sync_lookback: 20,
+            eth_rpc_url: None,
+        };
         let entry = self.open(&record)?;
+        let online = match entry.online {
+            Some(online) => online,
+            None => {
+                let online = entry.wallet.go_online(options)?;
+                entry.online = Some(online);
+                online
+            }
+        };
+        // Discover the funded External UTXO before constructing its blind seal.
+        entry.wallet.list_unspents(Some(online), false, false)?;
         let mut unbound_asset = false;
         if let Some(asset) = &request.asset_id {
             rgb_lib::ContractId::from_str(asset)
@@ -1060,7 +1062,7 @@ impl Manager {
             },
         );
         self.save(&record)?;
-        let receive = self.open(&record)?.wallet.witness_receive(
+        let receive = self.open(&record)?.wallet.blind_receive(
             if unbound_asset {
                 None
             } else {
@@ -1094,7 +1096,7 @@ impl Manager {
                 return Err(error.into());
             }
         };
-        let result = WitnessInvoice {
+        let result = BlindInvoice {
             wallet_id: id,
             request_id: request.request_id,
             invoice: if unbound_asset {
@@ -1143,7 +1145,8 @@ fn view(record: &Record, config: &Config) -> Result<WalletView> {
             .iter()
             .map(|schema| format!("{schema:?}").to_ascii_lowercase())
             .collect(),
-        witness_receive: true,
+        blind_receive: true,
+        witness_receive: false,
         external_send: send::supported_profile(registration),
         signing: false,
     })
