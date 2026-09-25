@@ -1,6 +1,5 @@
 use std::collections::BTreeSet;
 
-use rgb_lib::AssetSchema;
 use rgb_lib::wallet::{
     Balance, BtcBalance, DatabaseType, Online, OnlineOptions, ReceiveData, RgbWalletOpsOffline,
     RgbWalletOpsOnline, SinglesigKeys, Wallet, WalletData,
@@ -39,10 +38,10 @@ impl RgbWalletState {
         let mut wallet = Wallet::new(
             WalletData {
                 data_dir,
-                bitcoin_network: config.net(),
+                bitcoin_network: config.net()?,
                 database_type: DatabaseType::Sqlite,
                 max_allocations_per_utxo: max_allocations_per_utxo.unwrap_or(5),
-                supported_schemas: vec![AssetSchema::Nia],
+                supported_schemas: config.supported_schemas()?,
                 reuse_addresses: false,
             },
             SinglesigKeys {
@@ -59,6 +58,7 @@ impl RgbWalletState {
             indexer_url: config.indexer_address.clone(),
             skip_consistency_check: false,
             vanilla_sync_lookback: 20,
+            eth_rpc_url: config.eth_rpc(),
         })?;
 
         Ok(RgbWalletState {
@@ -82,8 +82,10 @@ impl RgbWalletState {
         // The API takes a duration, rgb-lib wants an absolute unix timestamp:
         // passing the duration through unchanged lands in 1970 and rgb-lib
         // rejects it with InvalidExpiration.
+        // The pinned library requires an expiry. Omitted/null durations use the
+        // HTTP API's existing one-hour default; they do not mean unbounded.
         let expiration_timestamp =
-            duration_seconds.map(|secs| unix_now().saturating_add(u64::from(secs)));
+            unix_now().saturating_add(u64::from(duration_seconds.unwrap_or(3600)));
 
         let rd = self.wallet.blind_receive(
             asset_id,

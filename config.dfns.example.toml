@@ -1,0 +1,28 @@
+# Copy to config.dfns.local.toml; use only new Dfns state.
+[api]
+listen_address = "127.0.0.1"
+port = 31015
+enable_cors = false
+max_json_size = 262144
+
+[wallet]
+data_dir = "./dfns-data/signet"
+network = "signet"
+# Configure your own Signet infrastructure. These local ports are examples.
+btc_rpc_address = "127.0.0.1:38332"
+btc_rpc_user = ""
+btc_rpc_password = ""
+indexer_address = "127.0.0.1:60601"
+proxy_address = ["rpc://127.0.0.1:31016/json-rpc"]
+# BFA needs an EVM RPC for consignment validation on both sides. The mock is
+# development-only evidence, never a trusted backing oracle.
+bfa_enabled = false
+eth_rpc_url = ""
+
+[wallet.mpc_send]
+max_amount = 25
+fee_rate_sat_vb = 5
+max_fee_sat = 2000
+max_inputs = 10
+min_confirmations = 1
+min_invoice_validity_secs = 120

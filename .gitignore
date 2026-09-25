@@ -5,3 +5,7 @@
 /.doomws
 /rgb-data
 /.bruno
+
+/.cargo/config.toml
+/dfns-data/
+/config.dfns.local.toml
