@@ -58,7 +58,7 @@ impl RgbWalletState {
             indexer_url: config.indexer_address.clone(),
             skip_consistency_check: false,
             vanilla_sync_lookback: 20,
-            eth_rpc_url: None,
+            eth_rpc_url: config.eth_rpc(),
         })?;
 
         Ok(RgbWalletState {

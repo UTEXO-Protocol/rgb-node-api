@@ -13,6 +13,12 @@ pub struct Config {
     pub btc_rpc_password: String,
     pub indexer_address: String,
     pub proxy_address: Vec<String>,
+    /// EVM RPC used for BFA consignment validation. Optional for NIA wallets.
+    #[serde(default)]
+    pub eth_rpc_url: Option<String>,
+    /// Opt in to BFA validation; existing NIA deployments remain unchanged.
+    #[serde(default)]
+    pub bfa_enabled: bool,
     #[serde(default)]
     pub mpc_send: MpcSendPolicy,
 }
@@ -65,7 +71,29 @@ impl MpcSendPolicy {
 
 impl Config {
     pub fn supported_schemas(&self) -> Result<Vec<AssetSchema>, rgb_lib::Error> {
-        Ok(vec![AssetSchema::Nia])
+        let mut schemas = vec![AssetSchema::Nia];
+        if self.bfa_enabled {
+            if self
+                .eth_rpc_url
+                .as_deref()
+                .is_none_or(|url| url.trim().is_empty())
+            {
+                return Err(rgb_lib::Error::InvalidEthRpcUrl {
+                    details: "BFA requires an explicit EVM RPC".into(),
+                });
+            }
+            schemas.push(AssetSchema::Bfa);
+        }
+        Ok(schemas)
+    }
+
+    /// The EVM RPC passed to `OnlineOptions`, only when BFA is enabled.
+    pub fn eth_rpc(&self) -> Option<String> {
+        if self.bfa_enabled {
+            self.eth_rpc_url.clone()
+        } else {
+            None
+        }
     }
 
     pub fn datadir(&self) -> String {
@@ -126,6 +154,32 @@ mod tests {
     }
 
     #[test]
+    fn bfa_is_explicit_and_requires_an_rpc() {
+        assert_eq!(
+            Config::default().supported_schemas().unwrap(),
+            vec![AssetSchema::Nia]
+        );
+        assert!(Config::default().eth_rpc().is_none());
+        let mut cfg = Config {
+            bfa_enabled: true,
+            ..Default::default()
+        };
+        assert!(cfg.supported_schemas().is_err());
+        cfg.eth_rpc_url = Some("http://127.0.0.1:31014".into());
+        assert_eq!(
+            cfg.supported_schemas().unwrap(),
+            vec![AssetSchema::Nia, AssetSchema::Bfa]
+        );
+        assert_eq!(cfg.eth_rpc().as_deref(), Some("http://127.0.0.1:31014"));
+        // An RPC configured without the opt-in stays unused.
+        let unused = Config {
+            eth_rpc_url: Some("http://127.0.0.1:31014".into()),
+            ..Default::default()
+        };
+        assert!(unused.eth_rpc().is_none());
+    }
+
+    #[test]
     fn unknown_or_missing_network_never_selects_mainnet() {
         for network in ["", "testent", "bitcoin", " regtest"] {
             let cfg = Config {
@@ -151,5 +205,16 @@ mod tests {
             };
             assert_eq!(cfg.net().unwrap(), expected);
         }
+    }
+}
+
+#[cfg(test)]
+mod schema_wire_tests {
+    use rgb_lib::AssetSchema;
+
+    #[test]
+    fn schema_serialises_as_its_variant_name() {
+        assert_eq!(serde_json::to_string(&AssetSchema::Nia).unwrap(), "\"Nia\"");
+        assert_eq!(serde_json::to_string(&AssetSchema::Bfa).unwrap(), "\"Bfa\"");
     }
 }

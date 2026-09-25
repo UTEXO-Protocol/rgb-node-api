@@ -71,6 +71,7 @@ pub fn blind() -> BlindRequest {
         request_id: Uuid::new_v4(),
         asset_id: None,
         amount: Some("25".into()),
+        schema: None,
         expiration_timestamp: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()

@@ -48,11 +48,15 @@ pub struct ChangeOutput {
     pub amount_sat: String,
 }
 #[derive(Clone, Serialize, Deserialize)]
-struct InputSnapshot {
-    rgb: Vec<Unspent>,
-    prevouts: Vec<(rgb_lib::bitcoin::OutPoint, rgb_lib::bitcoin::TxOut)>,
+pub(super) struct InputSnapshot {
+    pub(super) rgb: Vec<Unspent>,
+    pub(super) prevouts: Vec<(rgb_lib::bitcoin::OutPoint, rgb_lib::bitcoin::TxOut)>,
 }
-fn groups(record: &Record, psbt: &Psbt, network: BitcoinNetwork) -> Result<Vec<KeyGroup>> {
+pub(super) fn groups(
+    record: &Record,
+    psbt: &Psbt,
+    network: BitcoinNetwork,
+) -> Result<Vec<KeyGroup>> {
     let mut result = BTreeMap::<String, Vec<usize>>::new();
     for (index, input) in psbt.inputs.iter().enumerate() {
         let prevout = input.witness_utxo.as_ref().ok_or(MpcError::Internal)?;
@@ -180,6 +184,7 @@ fn invoice(
     network: BitcoinNetwork,
     policy: &MpcSendPolicy,
     preparing: bool,
+    supported: &[rgb_lib::AssetSchema],
 ) -> Result<rgb_lib::wallet::InvoiceData> {
     policy.validate().map_err(MpcError::Invalid)?;
     let amount = request
@@ -200,8 +205,15 @@ fn invoice(
     } else {
         0
     });
+    // The schema is checked while preparing. Finishing re-reads the journal's own
+    // invoice, so re-checking it against current configuration would only strand
+    // a saved operation if the supported schemas later changed.
+    let schema_allowed = !preparing
+        || data
+            .asset_schema
+            .is_some_and(|schema| supported.contains(&schema));
     if data.asset_id.as_deref() != Some(request.asset_id.as_str())
-        || data.asset_schema != Some(rgb_lib::AssetSchema::Nia)
+        || !schema_allowed
         || data.network != network
         || data.asset_id.is_none()
         || data.assignment != Assignment::Fungible(amount)
@@ -314,7 +326,11 @@ fn plan(
         policy.max_fee_sat,
     )?)
 }
-fn add_internal_keys(record: &Record, psbt: &mut Psbt, network: BitcoinNetwork) -> Result<()> {
+pub(super) fn add_internal_keys(
+    record: &Record,
+    psbt: &mut Psbt,
+    network: BitcoinNetwork,
+) -> Result<()> {
     for input in &mut psbt.inputs {
         let output = input.witness_utxo.as_ref().ok_or(MpcError::Internal)?;
         let binding = record
@@ -433,12 +449,12 @@ impl Manager {
         fs::File::open(dir)?.sync_all()?;
         Ok(())
     }
-    fn send_online(&mut self, record: &Record) -> Result<Online> {
+    pub(super) fn send_online(&mut self, record: &Record) -> Result<Online> {
         let options = OnlineOptions {
             indexer_url: self.config.indexer_address.clone(),
             skip_consistency_check: false,
             vanilla_sync_lookback: 20,
-            eth_rpc_url: None,
+            eth_rpc_url: self.config.eth_rpc(),
         };
         let entry = self.open(record)?;
         if let Some(online) = entry.online {
@@ -676,7 +692,14 @@ impl Manager {
         }
         let policy = self.config.mpc_send.clone();
         let network = self.network;
-        let data = invoice(&request, &self.config.proxy_address, network, &policy, true)?;
+        let data = invoice(
+            &request,
+            &self.config.proxy_address,
+            network,
+            &policy,
+            true,
+            &self.config.supported_schemas()?,
+        )?;
         let asset_id = request_asset(&request)?;
         let dir = self.root.join("sends").join(id.to_string());
         private_directory(&dir)?;
@@ -823,6 +846,7 @@ impl Manager {
             self.network,
             &journal.policy,
             false,
+            &self.config.supported_schemas()?,
         )?;
         if signed_psbt.len() > 128_000 {
             return Err(MpcError::Invalid("Signed PSBT too large"));

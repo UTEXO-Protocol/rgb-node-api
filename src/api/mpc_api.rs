@@ -2,8 +2,8 @@
 use crate::{
     api_core::api_errors::{ApiError, ApiErrorCode, error_with, internal_server_error},
     mpc::{
-        BlindInvoice, BlindRequest, MpcError, MpcService, Owner, Registration, SendRequest,
-        SendView, WalletView,
+        BlindInvoice, BlindRequest, CreateUtxosRequest, CreateUtxosView, MpcError, MpcService,
+        Owner, Registration, SendRequest, SendView, WalletView,
     },
 };
 use actix_web::{
@@ -85,6 +85,22 @@ pub(super) fn scope(service: MpcService) -> Scope {
         .route("/wallets/{wallet_id}/transfers", web::get().to(transfers))
         .route("/wallets/{wallet_id}/refresh", web::post().to(refresh))
         .route(
+            "/wallets/{wallet_id}/utxos/prepare",
+            web::post().to(prepare_utxos),
+        )
+        .route(
+            "/wallets/{wallet_id}/utxos/{request_id}",
+            web::get().to(utxos_status),
+        )
+        .route(
+            "/wallets/{wallet_id}/utxos/{request_id}/finish",
+            web::post().to(finish_utxos),
+        )
+        .route(
+            "/wallets/{wallet_id}/utxos/{request_id}/cancel",
+            web::post().to(cancel_utxos),
+        )
+        .route(
             "/wallets/{wallet_id}/sends/prepare",
             web::post().to(prepare_send),
         )
@@ -100,6 +116,60 @@ pub(super) fn scope(service: MpcService) -> Scope {
             "/wallets/{wallet_id}/sends/{request_id}/cancel",
             web::post().to(cancel_send),
         )
+}
+
+async fn prepare_utxos(
+    service: Data<MpcService>,
+    GatewayCaller(owner): GatewayCaller,
+    id: Path<String>,
+    request: Json<CreateUtxosRequest>,
+) -> Result<Json<CreateUtxosView>, ApiError> {
+    Ok(Json(
+        service
+            .prepare_utxos(owner, wallet_id(id)?, request.0)
+            .await
+            .map_err(map_error)?,
+    ))
+}
+async fn utxos_status(
+    service: Data<MpcService>,
+    GatewayCaller(owner): GatewayCaller,
+    path: Path<(String, String)>,
+) -> Result<Json<CreateUtxosView>, ApiError> {
+    let (id, request) = send_ids(path)?;
+    Ok(Json(
+        service
+            .utxos_status(owner, id, request)
+            .await
+            .map_err(map_error)?,
+    ))
+}
+async fn finish_utxos(
+    service: Data<MpcService>,
+    GatewayCaller(owner): GatewayCaller,
+    path: Path<(String, String)>,
+    body: Json<FinishSend>,
+) -> Result<Json<CreateUtxosView>, ApiError> {
+    let (id, request) = send_ids(path)?;
+    Ok(Json(
+        service
+            .finish_utxos(owner, id, request, body.signed_psbt.clone())
+            .await
+            .map_err(map_error)?,
+    ))
+}
+async fn cancel_utxos(
+    service: Data<MpcService>,
+    GatewayCaller(owner): GatewayCaller,
+    path: Path<(String, String)>,
+) -> Result<Json<CreateUtxosView>, ApiError> {
+    let (id, request) = send_ids(path)?;
+    Ok(Json(
+        service
+            .cancel_utxos(owner, id, request)
+            .await
+            .map_err(map_error)?,
+    ))
 }
 
 async fn prepare_send(
@@ -212,11 +282,18 @@ async fn assets(
     GatewayCaller(owner): GatewayCaller,
     id: Path<String>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let id = wallet_id(id)?;
     let (assets, btc_balance) = service
-        .asset_snapshot(owner, wallet_id(id)?)
+        .asset_snapshot(owner.clone(), id)
         .await
         .map_err(map_error)?;
     let mut view = asset_list_view(assets);
+    view["has_receive_utxo"] = service
+        .has_receive_utxo(owner, id)
+        .await
+        .ok()
+        .map(serde_json::Value::Bool)
+        .unwrap_or(serde_json::Value::Null);
     view["btc_balance"] = btc_balance
         .as_ref()
         .map(btc_balance_view)
@@ -237,7 +314,15 @@ fn asset_list_view(assets: rgb_lib::wallet::Assets) -> serde_json::Value {
             "precision": asset.precision, "balance": balance_view(&asset.balance)
         })
     });
-    serde_json::json!({"assets": nia.collect::<Vec<_>>()})
+    // BFA carries the same fungible fields the caller needs; dropping it here
+    // would report a settled receive as an empty wallet.
+    let bfa = assets.bfa.unwrap_or_default().into_iter().map(|asset| {
+        serde_json::json!({
+            "asset_id": asset.asset_id, "schema": "bfa", "ticker": asset.ticker, "name": asset.name,
+            "precision": asset.precision, "balance": balance_view(&asset.balance)
+        })
+    });
+    serde_json::json!({"assets": nia.chain(bfa).collect::<Vec<_>>()})
 }
 
 fn balance_view(balance: &rgb_lib::wallet::Balance) -> serde_json::Value {
@@ -353,6 +438,18 @@ mod tests {
         assert_eq!(view["assets"][0]["schema"], "nia");
         assert_eq!(view["assets"][0]["balance"]["settled"], "9007199254740993");
         assert_eq!(view["assets"][0]["balance"]["spendable"], "17");
+        // A settled BFA receive must not be reported as an empty wallet.
+        let with_bfa: rgb_lib::wallet::Assets = serde_json::from_value(serde_json::json!({
+            "nia": [], "uda": null, "cfa": null, "ifa": null,
+            "bfa": [{"asset_id": "rgb:bfa", "ticker": "BFAMOCK", "name": "Mock", "details": null,
+                     "precision": 0, "initial_supply": 0, "timestamp": 0, "added_at": 0,
+                     "balance": {"settled": 25, "future": 25, "spendable": 25},
+                     "media": null, "reject_list_url": null}]
+        }))
+        .unwrap();
+        let bfa_view = asset_list_view(with_bfa);
+        assert_eq!(bfa_view["assets"][0]["schema"], "bfa");
+        assert_eq!(bfa_view["assets"][0]["balance"]["settled"], "25");
     }
 
     #[actix_web::test]

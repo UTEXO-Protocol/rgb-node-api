@@ -18,7 +18,7 @@ use rgb_lib::{
         RgbWalletOpsOnline, SinglesigKeys, Wallet, WalletData,
     },
 };
-use rgb_node_api::mpc::{MpcService, RegistryProvider, SendRequest};
+use rgb_node_api::mpc::{CreateUtxosRequest, MpcService, RegistryProvider, SendRequest};
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
@@ -232,19 +232,151 @@ fn two_role_receive_send_twice_restart_and_spend_vanilla() {
         .unwrap();
     let mut req = blind();
     req.asset_id = Some(asset.asset_id.clone());
-    req.amount = Some("100".into());
+    req.amount = Some("25".into());
     assert!(matches!(
         rt.block_on(service.blind(owner(), id, req.clone())),
         Err(rgb_node_api::mpc::MpcError::Rgb(
             rgb_lib::Error::InsufficientAllocationSlots
         ))
     ));
-    // Blind receive needs an existing External UTXO. Use a small one so the
-    // first RGB send also needs the independent Internal funding key.
+    // The customer funds Internal once. A deliberately small pool output forces
+    // the first RGB send to select an additional Internal fee input.
     bitcoin.rpc(
         "sendtoaddress",
-        json!([registration.addresses[0].address, 0.00000330]),
+        json!([registration.addresses[1].address, 0.00101]),
         true,
+    );
+    bitcoin.mine(1);
+    wait(|| {
+        rt.block_on(service.asset_snapshot(owner(), id))
+            .unwrap()
+            .1
+            .unwrap()
+            .vanilla
+            .spendable
+            >= 101_000
+    });
+    let pool_request = CreateUtxosRequest {
+        request_id: uuid::Uuid::new_v4(),
+        num: 1,
+        size: 330,
+        up_to: false,
+    };
+    let cancelled = rt
+        .block_on(service.prepare_utxos(owner(), id, pool_request.clone()))
+        .unwrap();
+    assert_eq!(cancelled.state, "AWAITING_SIGNATURE");
+    assert_eq!(cancelled.key_groups.len(), 1);
+    assert_eq!(cancelled.outputs.len(), 2);
+    assert_eq!(cancelled.outputs[0].role, rgb_node_api::mpc::Role::Rgb);
+    assert_eq!(cancelled.outputs[1].role, rgb_node_api::mpc::Role::Fee);
+    assert!(
+        rt.block_on(service.utxos_status(
+            rgb_node_api::mpc::Owner {
+                tenant_id: "poc".into(),
+                user_id: "bob".into()
+            },
+            id,
+            pool_request.request_id
+        ))
+        .is_err()
+    );
+    assert_eq!(
+        rt.block_on(service.cancel_utxos(owner(), id, pool_request.request_id))
+            .unwrap()
+            .state,
+        "CANCELLED"
+    );
+    assert_eq!(
+        rt.block_on(service.cancel_utxos(owner(), id, pool_request.request_id))
+            .unwrap()
+            .state,
+        "CANCELLED"
+    );
+    let pool_request = CreateUtxosRequest {
+        request_id: uuid::Uuid::new_v4(),
+        ..pool_request
+    };
+    let pool = rt
+        .block_on(service.prepare_utxos(owner(), id, pool_request.clone()))
+        .unwrap();
+    assert_eq!(
+        pool.psbt,
+        rt.block_on(service.prepare_utxos(owner(), id, pool_request.clone()))
+            .unwrap()
+            .psbt
+    );
+    let mut altered = pool_request.clone();
+    altered.size = 1000;
+    assert!(
+        rt.block_on(service.prepare_utxos(owner(), id, altered))
+            .is_err()
+    );
+    drop(service);
+    let pool_path = receiver_dir.path().join(format!(
+        "mpc/utxo-preparations/{id}/{}.json",
+        pool_request.request_id
+    ));
+    // Crash after the library commits reservations, before publishing its result.
+    let mut journal: Value = serde_json::from_slice(&std::fs::read(&pool_path).unwrap()).unwrap();
+    journal["view"]["state"] = "PREPARING".into();
+    journal["view"]["psbt"] = Value::Null;
+    std::fs::write(&pool_path, serde_json::to_vec(&journal).unwrap()).unwrap();
+    let service = MpcService::new(cfg.clone(), Some(TOKEN.into())).unwrap();
+    assert_eq!(
+        rt.block_on(service.utxos_status(owner(), id, pool_request.request_id))
+            .unwrap()
+            .psbt,
+        pool.psbt
+    );
+    let signed_pool = sign(pool.psbt.as_ref().unwrap(), &signing_keys, false);
+    let mut tampered = Psbt::from_str(&signed_pool).unwrap();
+    tampered.unsigned_tx.output[1].value += rgb_lib::bitcoin::Amount::from_sat(1);
+    assert!(
+        rt.block_on(service.finish_utxos(
+            owner(),
+            id,
+            pool_request.request_id,
+            tampered.to_string()
+        ))
+        .is_err()
+    );
+    assert!(
+        rt.block_on(service.finish_utxos(
+            owner(),
+            id,
+            pool_request.request_id,
+            pool.psbt.clone().unwrap()
+        ))
+        .is_err()
+    );
+    let finished = rt
+        .block_on(service.finish_utxos(owner(), id, pool_request.request_id, signed_pool.clone()))
+        .unwrap();
+    assert_eq!(finished.state, "COMPLETED");
+    assert_eq!(finished.created, Some(1));
+    drop(service);
+    // Crash after broadcast but before saving completion: replay only the saved PSBT.
+    let mut journal: Value = serde_json::from_slice(&std::fs::read(&pool_path).unwrap()).unwrap();
+    journal["view"]["state"] = "SUBMITTING".into();
+    journal["view"]["created"] = Value::Null;
+    std::fs::write(&pool_path, serde_json::to_vec(&journal).unwrap()).unwrap();
+    let service = MpcService::new(cfg.clone(), Some(TOKEN.into())).unwrap();
+    assert!(
+        rt.block_on(service.cancel_utxos(owner(), id, pool_request.request_id))
+            .is_err()
+    );
+    assert_eq!(
+        rt.block_on(service.utxos_status(owner(), id, pool_request.request_id))
+            .unwrap()
+            .state,
+        "COMPLETED"
+    );
+    assert_eq!(
+        rt.block_on(service.finish_utxos(owner(), id, pool_request.request_id, signed_pool))
+            .unwrap()
+            .txid,
+        pool.txid
     );
     bitcoin.mine(1);
     wait(|| {
@@ -294,7 +426,7 @@ fn two_role_receive_send_twice_restart_and_spend_vanilla() {
                 asset.asset_id.clone(),
                 vec![Recipient {
                     recipient_id: data.recipient_id,
-                    assignment: Assignment::Fungible(100),
+                    assignment: Assignment::Fungible(25),
                     witness_data: None,
                     transport_endpoints: data.transport_endpoints,
                 }],
@@ -310,11 +442,6 @@ fn two_role_receive_send_twice_restart_and_spend_vanilla() {
     source
         .send_end(online, source.sign_psbt(begun.psbt, None).unwrap())
         .unwrap();
-    bitcoin.rpc(
-        "sendtoaddress",
-        json!([registration.addresses[1].address, 0.001]),
-        true,
-    );
     bitcoin.mine(1);
     wait(|| {
         rt.block_on(service.refresh(owner(), id)).unwrap();
@@ -325,16 +452,16 @@ fn two_role_receive_send_twice_restart_and_spend_vanilla() {
             .nia
             .unwrap()
             .iter()
-            .any(|a| a.balance.spendable == 100)
+            .any(|a| a.balance.spendable == 25)
     });
     drop(service);
     let mut prior_txid = None;
-    for round in 0..2 {
+    for (round, amount) in [10u64, 5].into_iter().enumerate() {
         let service = MpcService::new(cfg.clone(), Some(TOKEN.into())).unwrap();
         let invoice = source
             .blind_receive(
                 Some(asset.asset_id.clone()),
-                Assignment::Fungible(25),
+                Assignment::Fungible(amount),
                 blind().expiration_timestamp,
                 cfg.proxy_address.clone(),
                 1,
@@ -343,7 +470,7 @@ fn two_role_receive_send_twice_restart_and_spend_vanilla() {
         let request = SendRequest {
             request_id: uuid::Uuid::new_v4(),
             invoice: invoice.invoice,
-            amount: "25".into(),
+            amount: amount.to_string(),
             asset_id: asset.asset_id.clone(),
         };
         let prepared = rt
@@ -508,7 +635,7 @@ fn two_role_receive_send_twice_restart_and_spend_vanilla() {
                 .unwrap()[0]
                 .balance
                 .spendable,
-            100 - (round + 1) * 25
+            if round == 0 { 15 } else { 10 }
         );
         prior_txid = Some(psbt.unsigned_tx.compute_txid());
         drop(service);
@@ -583,7 +710,7 @@ fn two_role_receive_send_twice_restart_and_spend_vanilla() {
             .get_asset_balance(asset.asset_id.clone())
             .unwrap()
             .spendable,
-        50
+        10
     );
     // The only colored UTXO now contains two contracts. Exhausting the first
     // must retain a carrier for the unrelated allocation on that same input.
@@ -597,7 +724,7 @@ fn two_role_receive_send_twice_restart_and_spend_vanilla() {
     final_cfg.mpc_send.max_amount = 50;
     let service = MpcService::new(final_cfg, Some(TOKEN.into())).unwrap();
     for (contract, amount, retains_other) in [
-        (asset.asset_id.clone(), 50, true),
+        (asset.asset_id.clone(), 10, true),
         (other.asset_id.clone(), 7, false),
     ] {
         let receive = source
@@ -662,6 +789,6 @@ fn two_role_receive_send_twice_restart_and_spend_vanilla() {
         }
     }
     println!(
-        "DFNS_REGTEST_RESULT: blind receive=100 after External funding; receive/prepare/submit restarts recovered; two consecutive single Internal change sends=25+25 (two keys then one); Internal RGB change protected from BTC spend; separate BTC input spent=10000 sat; unrelated allocation retained; all assets exhausted; missing original PSBT preserves reservations; no provider calls"
+        "DFNS_REGTEST_RESULT: one Internal deposit -> create_utxos -> blind receive=25; receive/prepare/submit restarts recovered; two consecutive single Internal change sends=10+5, remainder=10 (two keys then one); Internal RGB change protected from BTC spend; separate BTC input spent=10000 sat; unrelated allocation retained; all assets exhausted; missing original PSBT preserves reservations; no provider calls"
     );
 }

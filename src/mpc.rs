@@ -35,6 +35,9 @@ use uuid::Uuid;
 #[path = "mpc_send.rs"]
 mod send;
 pub use send::{SendProfile, SendRequest, SendView};
+#[path = "mpc_utxos.rs"]
+mod utxos;
+pub use utxos::{CreateUtxosRequest, CreateUtxosView};
 
 #[derive(Debug)]
 pub enum MpcError {
@@ -157,6 +160,10 @@ pub struct BlindRequest {
     pub asset_id: Option<String>,
     /// Integer base units. None creates an unconstrained receive invoice.
     pub amount: Option<String>,
+    /// Schema of `asset_id` while the wallet has not seen that contract yet.
+    /// Absent means NIA, so saved requests and NIA deployments are unchanged.
+    #[serde(default)]
+    pub schema: Option<rgb_lib::AssetSchema>,
     pub expiration_timestamp: u64,
 }
 
@@ -444,7 +451,7 @@ impl MpcService {
                 indexer_url: manager.config.indexer_address.clone(),
                 skip_consistency_check: false,
                 vanilla_sync_lookback: 20,
-                eth_rpc_url: None,
+                eth_rpc_url: manager.config.eth_rpc(),
             };
             let entry = manager.open(&record)?;
             let assets = entry.wallet.list_assets(vec![])?;
@@ -486,7 +493,7 @@ impl MpcService {
                 indexer_url: manager.config.indexer_address.clone(),
                 skip_consistency_check: false,
                 vanilla_sync_lookback: 20,
-                eth_rpc_url: None,
+                eth_rpc_url: manager.config.eth_rpc(),
             };
             let entry = manager.open(&record)?;
             let online = match entry.online {
@@ -914,7 +921,11 @@ impl Manager {
         let transfer = added[0];
         let mut invoice = transfer.invoice_string.clone().ok_or(MpcError::Internal)?;
         if pending.unbound_asset {
-            invoice = bind_first_invoice(invoice, pending.request.asset_id.as_deref())?;
+            invoice = bind_first_invoice(
+                invoice,
+                pending.request.asset_id.as_deref(),
+                pending.request.schema.unwrap_or(rgb_lib::AssetSchema::Nia),
+            )?;
         }
         let data = rgb_lib::wallet::Invoice::new(invoice.clone())?.invoice_data();
         let expected = pending
@@ -1021,8 +1032,10 @@ impl Manager {
             indexer_url: self.config.indexer_address.clone(),
             skip_consistency_check: false,
             vanilla_sync_lookback: 20,
-            eth_rpc_url: None,
+            eth_rpc_url: self.config.eth_rpc(),
         };
+        let supported = self.config.supported_schemas()?;
+        let requested_schema = request.schema.unwrap_or(rgb_lib::AssetSchema::Nia);
         let entry = self.open(&record)?;
         let online = match entry.online {
             Some(online) => online,
@@ -1039,9 +1052,21 @@ impl Manager {
             rgb_lib::ContractId::from_str(asset)
                 .map_err(|_| MpcError::Invalid("Invalid asset ID"))?;
             match entry.wallet.get_asset_metadata(asset.clone()) {
-                Ok(metadata) if metadata.asset_schema == rgb_lib::AssetSchema::Nia => {}
-                Ok(_) => return Err(MpcError::Invalid("Only NIA receiving is supported")),
-                Err(rgb_lib::Error::AssetNotFound { .. }) => unbound_asset = true,
+                // A known contract states its own schema; the request cannot override it.
+                Ok(metadata) if supported.contains(&metadata.asset_schema) => {
+                    if request.schema.is_some_and(|s| s != metadata.asset_schema) {
+                        return Err(MpcError::Invalid(
+                            "Requested schema differs from the known contract",
+                        ));
+                    }
+                }
+                Ok(_) => return Err(MpcError::Invalid("Unsupported asset schema")),
+                Err(rgb_lib::Error::AssetNotFound { .. }) => {
+                    if !supported.contains(&requested_schema) {
+                        return Err(MpcError::Invalid("Unsupported asset schema"));
+                    }
+                    unbound_asset = true;
+                }
                 Err(error) => return Err(error.into()),
             }
         }
@@ -1100,7 +1125,11 @@ impl Manager {
             wallet_id: id,
             request_id: request.request_id,
             invoice: if unbound_asset {
-                bind_first_invoice(receive.invoice, request.asset_id.as_deref())?
+                bind_first_invoice(
+                    receive.invoice,
+                    request.asset_id.as_deref(),
+                    requested_schema,
+                )?
             } else {
                 receive.invoice
             },
@@ -1120,7 +1149,11 @@ impl Manager {
 // A fresh wallet cannot name an unknown asset in its receive database yet.
 // Keep the library's validated generic receive and pin the public invoice to
 // the requested NIA contract. The immutable record reconstructs it on restart.
-fn bind_first_invoice(invoice: String, asset: Option<&str>) -> Result<String> {
+fn bind_first_invoice(
+    invoice: String,
+    asset: Option<&str>,
+    schema: rgb_lib::AssetSchema,
+) -> Result<String> {
     let mut invoice = rgbinvoice::RgbInvoice::from_str(&invoice).map_err(|_| MpcError::Internal)?;
     if let Some(asset) = asset {
         invoice.contract = Some(
@@ -1128,7 +1161,7 @@ fn bind_first_invoice(invoice: String, asset: Option<&str>) -> Result<String> {
                 .parse()
                 .map_err(|_| MpcError::Invalid("Invalid asset ID"))?,
         );
-        invoice.schema = Some(rgb_lib::AssetSchema::Nia.into());
+        invoice.schema = Some(schema.into());
     }
     Ok(invoice.to_string())
 }
