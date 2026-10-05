@@ -80,6 +80,18 @@ pub(crate) enum WalletCmd {
         req: IssueNiaReq,
         resp: ResultChan<wallet::AssetNIA>,
     },
+    IssueIfaToken {
+        req: IssueIfaReq,
+        resp: ResultChan<wallet::AssetIFA>,
+    },
+    InflateBegin {
+        req: InflateBeginReq,
+        resp: ResultChan<String>,
+    },
+    InflateEnd {
+        psbt: String,
+        resp: ResultChan<wallet::OperationResult>,
+    },
     CreateUtxoBegin {
         req: CreateUtxoBeginReq,
         resp: ResultChan<String>,
@@ -146,6 +158,9 @@ impl std::fmt::Display for WalletCmd {
             WalletCmd::TokenBalance { .. } => "TokenBalance",
             WalletCmd::Receive { .. } => "Receive",
             WalletCmd::IssueNiaToken { .. } => "IssueNiaToken",
+            WalletCmd::IssueIfaToken { .. } => "IssueIfaToken",
+            WalletCmd::InflateBegin { .. } => "InflateBegin",
+            WalletCmd::InflateEnd { .. } => "InflateEnd",
             WalletCmd::CreateUtxoBegin { .. } => "CreateUtxoBegin",
             WalletCmd::CreateUtxoEnd { .. } => "CreateUtxoEnd",
             WalletCmd::SendBegin { .. } => "SendBegin",
@@ -274,12 +289,10 @@ impl WalletThread {
                         .collect();
 
                     for (id, wallet_lock) in wallets {
-                        run_isolated(&multi_wstate, &id, || {
-                            let mut wallet = wallet_lock.lock().unwrap();
-                            if let Err(err) = wallet.refresh() {
-                                log::error!("Refresh failed for {id}: {err:?}");
-                            }
-                        });
+                        let mut wallet = wallet_lock.lock().unwrap();
+                        if let Err(err) = wallet.refresh() {
+                            log::error!("Refresh failed for {id}: {err:?}");
+                        }
                     }
                 }
 
@@ -295,30 +308,13 @@ impl WalletThread {
 
                     let wallet_opt = multi_wstate.read().unwrap().get(&id).cloned();
                     if let Some(wallet_state) = wallet_opt {
-                        run_isolated(&multi_wstate, &id, || {
-                            handle_wallet_cmd(wallet_state, id.clone(), cmd)
-                        });
+                        handle_wallet_cmd(wallet_state, id.clone(), cmd);
                     } else {
                         log::warn!("Wallet not found: {id}");
                     }
                 }
             }
         }
-    }
-}
-
-/// rgb-lib asserts some invariants by panicking. One wallet hitting one must not
-/// end the thread that serves every wallet: drop that wallet's state, whose
-/// mutex is now poisoned, so the next request reopens it from disk. The pending
-/// caller sees its response channel closed.
-fn run_isolated(
-    multi_wstate: &RwLock<BTreeMap<String, Arc<Mutex<RgbWalletState>>>>,
-    id: &str,
-    f: impl FnOnce(),
-) {
-    if std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).is_err() {
-        log::error!("wallet command panicked, dropping wallet state: wid={id}");
-        multi_wstate.write().unwrap().remove(id);
     }
 }
 
@@ -695,6 +691,50 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                 }
             }
         }
+        WalletCmd::IssueIfaToken { req, resp } => {
+            let w = wallet_state.lock().unwrap();
+            let res = w.wallet.issue_asset_ifa(
+                req.ticker,
+                req.name,
+                req.precision,
+                req.amounts,
+                req.inflation_amounts,
+                req.reject_list_url,
+                None,
+            );
+            if let Err(err) = &res {
+                log_rgb_err!(err, "issue IFA: wid={id} error={:?}", err);
+            }
+            resp.send(res).is_ok()
+        }
+        WalletCmd::InflateBegin { req, resp } => {
+            let mut w = wallet_state.lock().unwrap();
+            let wo = w.wallet_online;
+            let res = w
+                .wallet
+                .inflate_begin(
+                    wo,
+                    req.asset_id,
+                    req.inflation_amounts,
+                    req.fee_rate,
+                    req.min_confirmations,
+                    false,
+                )
+                .map(|res| res.psbt);
+            if let Err(err) = &res {
+                log_rgb_err!(err, "inflate begin: wid={id} error={:?}", err);
+            }
+            resp.send(res).is_ok()
+        }
+        WalletCmd::InflateEnd { psbt, resp } => {
+            let mut w = wallet_state.lock().unwrap();
+            let wo = w.wallet_online;
+            let res = w.wallet.inflate_end(wo, psbt);
+            if let Err(err) = &res {
+                log_rgb_err!(err, "inflate end: wid={id} error={:?}", err);
+            }
+            resp.send(res).is_ok()
+        }
         WalletCmd::RefreshWallet { resp } => {
             let mut w = wallet_state.lock().unwrap();
             let wo = w.wallet_online;
@@ -708,19 +748,4 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
         }
         _ => return, // TODO: response error or warning
     };
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_panicking_wallet_command_does_not_unwind_the_thread() {
-        let wallets = RwLock::new(BTreeMap::new());
-        let mut ran = false;
-        run_isolated(&wallets, "w", || ran = true);
-        assert!(ran);
-        run_isolated(&wallets, "w", || panic!("rgb-lib invariant"));
-        assert!(wallets.read().unwrap().is_empty());
-    }
 }

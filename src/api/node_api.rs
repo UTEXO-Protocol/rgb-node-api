@@ -314,6 +314,42 @@ pub async fn issue_nia(
     Ok(Json(asset))
 }
 
+pub async fn issue_ifa(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+    req: Json<IssueIfaReq>,
+) -> Result<Json<rgb_lib::wallet::AssetIFA>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    let asset = ctx.issue_ifa_token(req.0).await.map_err(map_rgb_error)?;
+    Ok(Json(asset))
+}
+
+pub async fn inflate_begin(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+    req: Json<InflateBeginReq>,
+) -> Result<Json<PsbtRes>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    let psbt = ctx.inflate_begin(req.0).await.map_err(map_rgb_error)?;
+    Ok(Json(PsbtRes { psbt }))
+}
+
+pub async fn inflate_end(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+    req: Json<Psbt>,
+) -> Result<Json<SendResult>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    let res = ctx
+        .inflate_end(req.0.signed_psbt)
+        .await
+        .map_err(map_rgb_error)?;
+    Ok(Json(SendResult {
+        txid: res.txid,
+        batch_transfer_idx: res.batch_transfer_idx,
+    }))
+}
+
 pub async fn send_begin(
     ctx: Data<WalletCtx>,
     wallet_key: XWalletKey,

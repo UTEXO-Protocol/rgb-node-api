@@ -36,6 +36,10 @@ impl Config {
             }
             schemas.push(AssetSchema::Bfa);
         }
+        // rgb-lib rejects the IFA schema on mainnet.
+        if self.net() != BitcoinNetwork::Mainnet {
+            schemas.push(AssetSchema::Ifa);
+        }
         Ok(schemas)
     }
 
@@ -106,5 +110,19 @@ mod tests {
             ..Default::default()
         };
         assert!(unused.eth_rpc().is_none());
+    }
+
+    #[test]
+    fn ifa_is_enabled_off_mainnet_only() {
+        let mut cfg = Config {
+            network: "regtest".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            cfg.supported_schemas().unwrap(),
+            vec![AssetSchema::Nia, AssetSchema::Ifa]
+        );
+        cfg.network = "mainnet".into();
+        assert_eq!(cfg.supported_schemas().unwrap(), vec![AssetSchema::Nia]);
     }
 }

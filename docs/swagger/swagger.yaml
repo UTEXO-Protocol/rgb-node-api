@@ -357,6 +357,162 @@ paths:
           $ref: '#/components/responses/InternalError'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
+  /wallet/issueassetifa:
+    post:
+      summary: Issue Asset Ifa
+      operationId: issue_asset_ifa_wallet_issueassetifa_post
+      description: >-
+        Issue an IFA on existing colorable UTXOs. The amounts allocate initial
+        tokens and inflation_amounts allocate rights to create more tokens later.
+        This creates the contract without a Bitcoin transaction or client signature.
+        IFA is unavailable on mainnet.
+      parameters:
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueAssetIfaRequestModel'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetIfa'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /wallet/inflatebegin:
+    post:
+      summary: Inflate Begin
+      operationId: inflate_begin_wallet_inflatebegin_post
+      description: >-
+        Prepare a PSBT creating more IFA tokens in this wallet by spending its inflation rights. Each inflation_amounts entry creates a separate allocation. Sign it and pass it to `/wallet/inflateend`.
+      parameters:
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InflateBeginRequestModel'
+      responses:
+        '200':
+          description: The unsigned PSBT to be signed by the client.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PsbtResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /wallet/inflateend:
+    post:
+      summary: Inflate End
+      operationId: inflate_end_wallet_inflateend_post
+      description: >-
+        Broadcast the signed PSBT returned by `/wallet/inflatebegin` and record
+        the inflation.
+      parameters:
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendAssetEndRequestModel'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /wallet/assetbalance:
     post:
       summary: Get Asset Balance
@@ -1288,6 +1444,19 @@ components:
             - type: string
             - type: 'null'
           title: Reject List Url
+        issuance_link_right_outpoint:
+          $ref: '#/components/schemas/Outpoint'
+          description: >-
+            Where the link right was allocated at issuance. Omitted when the
+            asset has none.
+        linked_from_asset_id:
+          type: string
+          title: Linked From Asset Id
+          description: Parent asset declared at genesis. Omitted when none.
+        linked_to_asset_id:
+          type: string
+          title: Linked To Asset Id
+          description: Child asset linked to this one. Omitted when none.
       type: object
       required:
         - asset_id
@@ -1594,7 +1763,9 @@ components:
           title: Burn Recipient
           description: >-
             Hex-encoded 32 bytes (optional `0x` prefix) identifying who receives
-            the released funds. Required for BFA.
+            the released funds. Required for BFA; optional and unused for IFA.
+            When provided, valid hex encoding and a 32-byte length are required
+            for both schemas.
         fee_rate:
           type: integer
           title: Fee Rate
@@ -1662,6 +1833,73 @@ components:
       required:
         - changed
       title: FailTransferResponse
+    IssueAssetIfaRequestModel:
+      type: object
+      properties:
+        ticker:
+          type: string
+          description: Uppercase asset ticker.
+        name:
+          type: string
+        precision:
+          type: integer
+          default: 0
+        amounts:
+          type: array
+          items:
+            type: integer
+            minimum: 1
+            maximum: 18446744073709551615
+          description: >-
+            Initial token allocations, one per available UTXO. May be empty
+            when inflation_amounts is non-empty.
+        inflation_amounts:
+          type: array
+          items:
+            type: integer
+            minimum: 1
+            maximum: 18446744073709551615
+          default: []
+          description: >-
+            Inflation rights reserved at issuance, one per available UTXO.
+            The sum of amounts and inflation_amounts defines max_supply and
+            must not exceed u64::MAX. An empty list permits no further issuance.
+        reject_list_url:
+          anyOf:
+            - type: string
+            - type: 'null'
+          description: Optional reject-list service URL committed to the asset.
+      required:
+        - ticker
+        - name
+        - amounts
+      title: IssueAssetIfaRequestModel
+    InflateBeginRequestModel:
+      type: object
+      properties:
+        asset_id:
+          type: string
+        inflation_amounts:
+          type: array
+          minItems: 1
+          items:
+            type: integer
+            minimum: 1
+            maximum: 18446744073709551615
+          description: >-
+            Amounts of new tokens to create in this wallet, one new output per
+            entry. Requires sufficient spendable inflation rights for this asset.
+        fee_rate:
+          type: integer
+          default: 1
+          description: Bitcoin transaction fee rate in sat/vB.
+        min_confirmations:
+          type: integer
+          default: 1
+      required:
+        - asset_id
+        - inflation_amounts
+      title: InflateBeginRequestModel
     IssueAssetNiaRequestModel:
       properties:
         amounts:

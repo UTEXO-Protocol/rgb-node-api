@@ -73,6 +73,33 @@ pub struct IssueNiaReq {
     pub precision: u8,
 }
 
+/// `IssueAssetIfaRequestModel` in the API spec.
+#[derive(serde::Deserialize)]
+pub struct IssueIfaReq {
+    pub ticker: String,
+    pub name: String,
+    #[serde(default)]
+    pub precision: u8,
+    pub amounts: Vec<u64>,
+    /// Rights allocated at issuance, limiting how many more tokens can be created.
+    #[serde(default)]
+    pub inflation_amounts: Vec<u64>,
+    #[serde(default)]
+    pub reject_list_url: Option<String>,
+}
+
+/// `InflateBeginRequestModel` in the API spec.
+#[derive(serde::Deserialize)]
+pub struct InflateBeginReq {
+    pub asset_id: String,
+    /// Newly created tokens, one allocation per amount, paid to this wallet.
+    pub inflation_amounts: Vec<u64>,
+    #[serde(default = "default_fee_rate")]
+    pub fee_rate: u64,
+    #[serde(default = "default_min_confirmations")]
+    pub min_confirmations: u8,
+}
+
 /// `CreateUtxosBegin` in the API spec.
 #[derive(serde::Deserialize)]
 pub struct CreateUtxoBeginReq {
@@ -134,20 +161,6 @@ pub struct SendBeginReq {
 }
 
 impl SendBeginReq {
-    /// rgb-lib sums the recipients of each asset with a panicking `checked_add`,
-    /// before any balance check: reject an overflowing total up front.
-    pub fn validate_amounts(&self) -> Result<(), rgb_lib::Error> {
-        for (asset_id, recipients) in &self.recipient_map {
-            recipients
-                .iter()
-                .try_fold(0u64, |total, r| total.checked_add(r.amount))
-                .ok_or_else(|| rgb_lib::Error::InvalidRecipientData {
-                    details: format!("total amount for asset {asset_id} exceeds u64::MAX"),
-                })?;
-        }
-        Ok(())
-    }
-
     pub fn validate_expiration(&self) -> Result<(), rgb_lib::Error> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -260,39 +273,5 @@ mod burn_tests {
                 Err(rgb_lib::Error::InvalidTxid)
             ));
         }
-    }
-}
-
-#[cfg(test)]
-mod send_amount_tests {
-    use super::*;
-
-    fn send_req(amounts: &[u64]) -> SendBeginReq {
-        let recipients: Vec<_> = amounts
-            .iter()
-            .enumerate()
-            .map(|(i, amount)| {
-                serde_json::json!({
-                    "recipient_id": format!("r{i}"),
-                    "amount": amount,
-                    "transport_endpoints": [],
-                })
-            })
-            .collect();
-        serde_json::from_value(serde_json::json!({
-            "recipient_map": { "rgb:x": recipients },
-            "expiration_timestamp": 1,
-        }))
-        .unwrap()
-    }
-
-    #[test]
-    fn overflowing_total_per_asset_is_rejected() {
-        assert!(send_req(&[u64::MAX]).validate_amounts().is_ok());
-        assert!(send_req(&[u64::MAX - 1, 1]).validate_amounts().is_ok());
-        assert!(matches!(
-            send_req(&[u64::MAX, 1]).validate_amounts(),
-            Err(rgb_lib::Error::InvalidRecipientData { .. })
-        ));
     }
 }

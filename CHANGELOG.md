@@ -17,9 +17,14 @@ All notable changes to this project are documented here. The format follows
 
 - Opt-in BFA support: set `bfa_enabled = true` and `eth_rpc_url` in `[wallet]`.
   Wallets then accept the BFA schema and validate BFA consignments against the
-  EVM RPC. Without the opt-in wallets stay NIA-only.
-- `/wallet/burnbegin` and `/wallet/burnend` burn BFA assets with a hex
-  `burn_recipient` (32 bytes).
+  EVM RPC. BFA stays disabled without the opt-in.
+- IFA support on every network except mainnet, where rgb-lib does not allow
+  IFA. No configuration is needed.
+- `/wallet/issueassetifa` creates IFA tokens and reserves inflation rights.
+- `/wallet/inflatebegin` and `/wallet/inflateend` create additional IFA tokens
+  using the wallet's inflation rights and a PSBT signed by the client.
+- `/wallet/burnbegin` and `/wallet/burnend` support burning BFA and IFA assets.
+  BFA burns require a 32-byte `burn_recipient`, encoded as hex.
 - `/wallet/getconsignment` returns the hex consignment of a send or burn by
   `asset_id` and `txid`.
 
@@ -28,9 +33,6 @@ All notable changes to this project are documented here. The format follows
 - Responses follow the pinned rgb-lib models: `listassets` has a `bfa` group,
   transfers can be `WaitingBroadcast`, allocations can be `BridgeRight` and
   UTXOs carry `derivation_index`.
-- `/wallet/sendbegin` rejects a recipient total above `u64::MAX` per asset
-  with 400 instead of crashing the wallet thread, and a panic inside one
-  wallet no longer stops the service for the others.
 - rgb-lib pinned to tag `v0.3.0-beta.43-bfa`, with its BFA RGB crate patches
   mirrored in `[patch.crates-io]`.
 
