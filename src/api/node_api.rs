@@ -340,6 +340,42 @@ pub async fn send_end(
     }))
 }
 
+pub async fn burn_begin(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+    req: Json<BurnBeginReq>,
+) -> Result<Json<PsbtRes>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    let psbt = ctx.burn_begin(req.0).await.map_err(map_rgb_error)?;
+    Ok(Json(PsbtRes { psbt }))
+}
+
+pub async fn burn_end(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+    req: Json<Psbt>,
+) -> Result<Json<SendResult>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    let res = ctx
+        .burn_end(req.signed_psbt.clone())
+        .await
+        .map_err(map_rgb_error)?;
+    Ok(Json(SendResult {
+        txid: res.txid,
+        batch_transfer_idx: res.batch_transfer_idx,
+    }))
+}
+
+pub async fn get_consignment(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+    req: Json<GetConsignmentReq>,
+) -> Result<Json<GetConsignmentRes>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    let res = ctx.get_consignment(req.0).await.map_err(map_rgb_error)?;
+    Ok(Json(res))
+}
+
 pub async fn blind_receive(
     ctx: Data<WalletCtx>,
     wallet_key: XWalletKey,

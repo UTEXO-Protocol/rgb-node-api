@@ -96,6 +96,18 @@ pub(crate) enum WalletCmd {
         psbt: String,
         resp: ResultChan<wallet::OperationResult>,
     },
+    BurnBegin {
+        req: BurnBeginReq,
+        resp: ResultChan<String>,
+    },
+    BurnEnd {
+        psbt: String,
+        resp: ResultChan<wallet::OperationResult>,
+    },
+    GetConsignment {
+        req: GetConsignmentReq,
+        resp: ResultChan<GetConsignmentRes>,
+    },
     SendBtcBegin {
         req: SendBtcReq,
         resp: ResultChan<String>,
@@ -138,6 +150,9 @@ impl std::fmt::Display for WalletCmd {
             WalletCmd::CreateUtxoEnd { .. } => "CreateUtxoEnd",
             WalletCmd::SendBegin { .. } => "SendBegin",
             WalletCmd::SendEnd { .. } => "SendEnd",
+            WalletCmd::BurnBegin { .. } => "BurnBegin",
+            WalletCmd::BurnEnd { .. } => "BurnEnd",
+            WalletCmd::GetConsignment { .. } => "GetConsignment",
             WalletCmd::SendBtcBegin { .. } => "SendBtcBegin",
             WalletCmd::SendBtcEnd { .. } => "SendBtcEnd",
             WalletCmd::AddReadOnlyWallet { .. } => "AddReadOnlyWallet",
@@ -259,10 +274,12 @@ impl WalletThread {
                         .collect();
 
                     for (id, wallet_lock) in wallets {
-                        let mut wallet = wallet_lock.lock().unwrap();
-                        if let Err(err) = wallet.refresh() {
-                            log::error!("Refresh failed for {id}: {err:?}");
-                        }
+                        run_isolated(&multi_wstate, &id, || {
+                            let mut wallet = wallet_lock.lock().unwrap();
+                            if let Err(err) = wallet.refresh() {
+                                log::error!("Refresh failed for {id}: {err:?}");
+                            }
+                        });
                     }
                 }
 
@@ -278,13 +295,30 @@ impl WalletThread {
 
                     let wallet_opt = multi_wstate.read().unwrap().get(&id).cloned();
                     if let Some(wallet_state) = wallet_opt {
-                        handle_wallet_cmd(wallet_state, id.clone(), cmd);
+                        run_isolated(&multi_wstate, &id, || {
+                            handle_wallet_cmd(wallet_state, id.clone(), cmd)
+                        });
                     } else {
                         log::warn!("Wallet not found: {id}");
                     }
                 }
             }
         }
+    }
+}
+
+/// rgb-lib asserts some invariants by panicking. One wallet hitting one must not
+/// end the thread that serves every wallet: drop that wallet's state, whose
+/// mutex is now poisoned, so the next request reopens it from disk. The pending
+/// caller sees its response channel closed.
+fn run_isolated(
+    multi_wstate: &RwLock<BTreeMap<String, Arc<Mutex<RgbWalletState>>>>,
+    id: &str,
+    f: impl FnOnce(),
+) {
+    if std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).is_err() {
+        log::error!("wallet command panicked, dropping wallet state: wid={id}");
+        multi_wstate.write().unwrap().remove(id);
     }
 }
 
@@ -349,7 +383,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                 .lock()
                 .unwrap()
                 .wallet
-                .list_transfers(wallet::AssetFilter::Any, None)
+                .list_transfers(wallet::AssetFilter::AnyOrNone, None)
             {
                 Ok(val) => resp.send(Ok(val)).is_ok(),
                 Err(err) => {
@@ -382,7 +416,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                 .lock()
                 .unwrap()
                 .wallet
-                .list_transfers(wallet::AssetFilter::Any, None)
+                .list_transfers(wallet::AssetFilter::AnyOrNone, None)
                 .map(|transfers| {
                     transfers
                         .into_iter()
@@ -536,7 +570,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                 req.donation,
                 req.fee_rate,
                 req.min_confirmations,
-                None,
+                req.expiration_timestamp,
                 false,
                 None,
             ) {
@@ -557,6 +591,66 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                     resp.send(Err(err)).is_ok()
                 }
             }
+        }
+        WalletCmd::BurnBegin { req, resp } => {
+            let res = req.burn_recipient_bytes().and_then(|burn_recipient| {
+                let mut w = wallet_state.lock().unwrap();
+                let wo = w.wallet_online;
+                w.wallet.burn_begin(
+                    wo,
+                    req.asset_id,
+                    req.amount,
+                    burn_recipient,
+                    req.fee_rate,
+                    req.min_confirmations,
+                    false,
+                )
+            });
+            match res {
+                Ok(val) => resp.send(Ok(val.psbt)).is_ok(),
+                Err(err) => {
+                    log_rgb_err!(err, "burn begin: wid={id} error={:?}", err);
+                    resp.send(Err(err)).is_ok()
+                }
+            }
+        }
+        WalletCmd::BurnEnd { psbt, resp } => {
+            let mut w = wallet_state.lock().unwrap();
+            let wo = w.wallet_online;
+            match w.wallet.burn_end(wo, psbt) {
+                Ok(val) => resp.send(Ok(val)).is_ok(),
+                Err(err) => {
+                    log_rgb_err!(err, "burn end: wid={id} error={:?}", err);
+                    resp.send(Err(err)).is_ok()
+                }
+            }
+        }
+        WalletCmd::GetConsignment { req, resp } => {
+            let res = req.validate_txid().and_then(|()| {
+                let w = wallet_state.lock().unwrap();
+                // Only an asset this wallet knows may name a path under it.
+                w.wallet.get_asset_metadata(req.asset_id.clone())?;
+                let path = w.wallet.get_send_consignment_path(&req.asset_id, &req.txid);
+                match std::fs::read(path) {
+                    Ok(bytes) => Ok(GetConsignmentRes {
+                        bytes_hex: hex::encode(bytes),
+                    }),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                        Err(rgb_lib::Error::NoConsignment)
+                    }
+                    Err(e) => Err(e.into()),
+                }
+            });
+            if let Err(err) = &res {
+                log_rgb_err!(
+                    err,
+                    "get consignment: wid={id} asset={} txid={} error={:?}",
+                    req.asset_id,
+                    req.txid,
+                    err
+                );
+            }
+            resp.send(res).is_ok()
         }
         WalletCmd::SendBtcBegin { req, resp } => {
             let mut w = wallet_state.lock().unwrap();
@@ -614,4 +708,19 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
         }
         _ => return, // TODO: response error or warning
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_panicking_wallet_command_does_not_unwind_the_thread() {
+        let wallets = RwLock::new(BTreeMap::new());
+        let mut ran = false;
+        run_isolated(&wallets, "w", || ran = true);
+        assert!(ran);
+        run_isolated(&wallets, "w", || panic!("rgb-lib invariant"));
+        assert!(wallets.read().unwrap().is_empty());
+    }
 }

@@ -267,8 +267,37 @@ impl WalletCtx {
     }
 
     pub async fn send_begin(&self, req: SendBeginReq) -> Result<String, rgb_lib::Error> {
+        req.validate_expiration()?;
+        req.validate_amounts()?;
         let (resp, recv) = oneshot::channel();
         let cmd = WalletCmd::SendBegin { req, resp };
+        self.send_cmd(cmd, recv).await
+    }
+
+    pub async fn burn_begin(&self, req: BurnBeginReq) -> Result<String, rgb_lib::Error> {
+        let (resp, recv) = oneshot::channel();
+        let cmd = WalletCmd::BurnBegin { req, resp };
+        self.send_cmd(cmd, recv).await
+    }
+
+    pub async fn burn_end(
+        &self,
+        signed_psbt: String,
+    ) -> Result<wallet::OperationResult, rgb_lib::Error> {
+        let (resp, recv) = oneshot::channel();
+        let cmd = WalletCmd::BurnEnd {
+            psbt: signed_psbt,
+            resp,
+        };
+        self.send_cmd(cmd, recv).await
+    }
+
+    pub async fn get_consignment(
+        &self,
+        req: GetConsignmentReq,
+    ) -> Result<GetConsignmentRes, rgb_lib::Error> {
+        let (resp, recv) = oneshot::channel();
+        let cmd = WalletCmd::GetConsignment { req, resp };
         self.send_cmd(cmd, recv).await
     }
 

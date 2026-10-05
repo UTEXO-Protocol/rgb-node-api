@@ -128,4 +128,171 @@ pub struct SendBeginReq {
     pub fee_rate: u64,
     #[serde(default = "default_min_confirmations")]
     pub min_confirmations: u8,
+    /// Absolute Unix deadline from the recipient invoice (earliest for a batch).
+    /// Required by the pinned RGB protocol; an arbitrary default can outlive the invoice.
+    pub expiration_timestamp: u64,
+}
+
+impl SendBeginReq {
+    /// rgb-lib sums the recipients of each asset with a panicking `checked_add`,
+    /// before any balance check: reject an overflowing total up front.
+    pub fn validate_amounts(&self) -> Result<(), rgb_lib::Error> {
+        for (asset_id, recipients) in &self.recipient_map {
+            recipients
+                .iter()
+                .try_fold(0u64, |total, r| total.checked_add(r.amount))
+                .ok_or_else(|| rgb_lib::Error::InvalidRecipientData {
+                    details: format!("total amount for asset {asset_id} exceeds u64::MAX"),
+                })?;
+        }
+        Ok(())
+    }
+
+    pub fn validate_expiration(&self) -> Result<(), rgb_lib::Error> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| rgb_lib::Error::InvalidExpiration)?
+            .as_secs();
+        if self.expiration_timestamp <= now || self.expiration_timestamp > i64::MAX as u64 {
+            return Err(rgb_lib::Error::InvalidExpiration);
+        }
+        Ok(())
+    }
+}
+
+/// `BurnBeginRequestModel` in the API spec.
+#[derive(serde::Deserialize)]
+pub struct BurnBeginReq {
+    pub asset_id: String,
+    pub amount: u64,
+    /// Hex-encoded 32-byte recipient of the released funds, required for BFA.
+    #[serde(default)]
+    pub burn_recipient: Option<String>,
+    #[serde(default = "default_fee_rate")]
+    pub fee_rate: u64,
+    #[serde(default = "default_min_confirmations")]
+    pub min_confirmations: u8,
+}
+
+impl BurnBeginReq {
+    /// Decode the hex recipient; the 32-byte length is enforced by rgb-lib.
+    pub fn burn_recipient_bytes(&self) -> Result<Option<Vec<u8>>, rgb_lib::Error> {
+        self.burn_recipient
+            .as_deref()
+            .map(|r| {
+                hex::decode(r.strip_prefix("0x").unwrap_or(r)).map_err(|e| {
+                    rgb_lib::Error::InvalidDetails {
+                        details: format!("burn_recipient is not valid hex: {e}"),
+                    }
+                })
+            })
+            .transpose()
+    }
+}
+
+/// `GetConsignmentRequestModel` in the API spec.
+#[derive(serde::Deserialize)]
+pub struct GetConsignmentReq {
+    pub asset_id: String,
+    /// TXID of the send or burn that produced the consignment.
+    pub txid: String,
+}
+
+impl GetConsignmentReq {
+    /// The TXID names a directory under the wallet: only accept a real TXID.
+    pub fn validate_txid(&self) -> Result<(), rgb_lib::Error> {
+        if self.txid.len() != 64 || !self.txid.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err(rgb_lib::Error::InvalidTxid);
+        }
+        Ok(())
+    }
+}
+
+#[derive(serde::Serialize)]
+pub struct GetConsignmentRes {
+    /// Raw consignment file, hex encoded.
+    pub bytes_hex: String,
+}
+
+#[cfg(test)]
+mod burn_tests {
+    use super::*;
+
+    fn burn_req(recipient: Option<&str>) -> BurnBeginReq {
+        serde_json::from_value(serde_json::json!({
+            "asset_id": "rgb:x",
+            "amount": 1,
+            "burn_recipient": recipient,
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn burn_recipient_is_hex_with_optional_prefix() {
+        assert_eq!(burn_req(None).burn_recipient_bytes().unwrap(), None);
+        let hex32 = "11".repeat(32);
+        assert_eq!(
+            burn_req(Some(&hex32)).burn_recipient_bytes().unwrap(),
+            Some(vec![0x11; 32])
+        );
+        assert_eq!(
+            burn_req(Some(&format!("0x{hex32}")))
+                .burn_recipient_bytes()
+                .unwrap(),
+            Some(vec![0x11; 32])
+        );
+        assert!(matches!(
+            burn_req(Some("zz")).burn_recipient_bytes(),
+            Err(rgb_lib::Error::InvalidDetails { .. })
+        ));
+    }
+
+    #[test]
+    fn consignment_lookup_only_accepts_a_txid() {
+        let req = |txid: &str| GetConsignmentReq {
+            asset_id: "rgb:x".into(),
+            txid: txid.into(),
+        };
+        assert!(req(&"ab".repeat(32)).validate_txid().is_ok());
+        for bad in ["", "../../etc", &"ab".repeat(31), &"zz".repeat(32)] {
+            assert!(matches!(
+                req(bad).validate_txid(),
+                Err(rgb_lib::Error::InvalidTxid)
+            ));
+        }
+    }
+}
+
+#[cfg(test)]
+mod send_amount_tests {
+    use super::*;
+
+    fn send_req(amounts: &[u64]) -> SendBeginReq {
+        let recipients: Vec<_> = amounts
+            .iter()
+            .enumerate()
+            .map(|(i, amount)| {
+                serde_json::json!({
+                    "recipient_id": format!("r{i}"),
+                    "amount": amount,
+                    "transport_endpoints": [],
+                })
+            })
+            .collect();
+        serde_json::from_value(serde_json::json!({
+            "recipient_map": { "rgb:x": recipients },
+            "expiration_timestamp": 1,
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn overflowing_total_per_asset_is_rejected() {
+        assert!(send_req(&[u64::MAX]).validate_amounts().is_ok());
+        assert!(send_req(&[u64::MAX - 1, 1]).validate_amounts().is_ok());
+        assert!(matches!(
+            send_req(&[u64::MAX, 1]).validate_amounts(),
+            Err(rgb_lib::Error::InvalidRecipientData { .. })
+        ));
+    }
 }

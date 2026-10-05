@@ -12,7 +12,7 @@ resolver = "3"
 # different revisions — the wallet descriptors they derive must match exactly
 # or client-side signatures will not validate server-side.
 [workspace.dependencies]
-rgb-lib = { git = "ssh://git@github.com/UTEXO-Protocol/rgb-lib.git", branch = "dev", default-features = false, features = ["electrum", "esplora"] }
+rgb-lib = { git = "ssh://git@github.com/UTEXO-Protocol/rgb-lib.git", tag = "v0.3.0-beta.43-bfa", default-features = false, features = ["electrum", "esplora"] }
 
 [dependencies]
 actix = "0.13.5"
@@ -47,3 +47,12 @@ toml = "0.9.6"
 [dev-dependencies]
 # pins the wire format of the response models in tests
 serde_json = "1.0"
+
+# The BFA tags of rgb-lib build against BFA forks of the RGB crates through
+# [patch.crates-io], which Cargo does not propagate to dependents. Keep these
+# revisions in sync with the pinned rgb-lib tag.
+[patch.crates-io]
+rgb-consensus = { git = "https://github.com/UTEXO-Protocol/rgb-consensus-s-bfa", rev = "2faf6118b2f5fe30dd90dd5244d5a7dc32bcd757" }
+rgb-ops = { git = "https://github.com/UTEXO-Protocol/rgb-ops-s-bfa", rev = "773766b5ca7a9e705ec68c2f9ed0917f505cd6e3" }
+rgb-invoicing = { git = "https://github.com/UTEXO-Protocol/rgb-ops-s-bfa", rev = "773766b5ca7a9e705ec68c2f9ed0917f505cd6e3" }
+rgb-schemas = { git = "https://github.com/UTEXO-Protocol/rgb-schemas-s-bfa", rev = "238dfe7a89db998107fd87d919bf2757a2746d7f" }

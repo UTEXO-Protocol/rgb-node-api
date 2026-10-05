@@ -503,6 +503,162 @@ paths:
           $ref: '#/components/responses/InternalError'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
+  /wallet/burnbegin:
+    post:
+      summary: Burn Begin
+      operationId: burn_begin_wallet_burnbegin_post
+      description: >-
+        Prepare a PSBT burning an amount of a BFA (or IFA) asset. Sign it and pass it to `/wallet/burnend`.
+      parameters:
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BurnBeginRequestModel'
+      responses:
+        '200':
+          description: The unsigned PSBT to be signed by the client.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PsbtResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /wallet/burnend:
+    post:
+      summary: Burn End
+      operationId: burn_end_wallet_burnend_post
+      description: >-
+        Broadcast the signed burn PSBT. The burn consignment is then available from `/wallet/getconsignment` with the returned TXID.
+      parameters:
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendAssetEndRequestModel'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /wallet/getconsignment:
+    post:
+      summary: Get Consignment
+      operationId: get_consignment_wallet_getconsignment_post
+      description: >-
+        Return the consignment this wallet produced for a send or burn of an asset, identified by its TXID. Returns 404 `not_found` if the wallet has no such consignment.
+      parameters:
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GetConsignmentRequestModel'
+      responses:
+        '200':
+          description: The raw consignment, hex encoded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetConsignmentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /wallet/blindreceive:
     post:
       summary: Generate Invoice
@@ -1033,6 +1189,60 @@ components:
         - balance
         - media
       title: AssetCfa
+    AssetBfa:
+      properties:
+        asset_id:
+          type: string
+          title: Asset Id
+        ticker:
+          type: string
+          title: Ticker
+        name:
+          type: string
+          title: Name
+        details:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Details
+        precision:
+          type: integer
+          title: Precision
+        initial_supply:
+          type: integer
+          title: Initial Supply
+        timestamp:
+          type: integer
+          title: Timestamp
+        added_at:
+          type: integer
+          title: Added At
+        balance:
+          $ref: '#/components/schemas/Balance'
+        media:
+          anyOf:
+            - $ref: '#/components/schemas/Media'
+            - type: 'null'
+        reject_list_url:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Reject List Url
+      type: object
+      required:
+        - asset_id
+        - ticker
+        - name
+        - details
+        - precision
+        - initial_supply
+        - timestamp
+        - added_at
+        - balance
+        - media
+        - reject_list_url
+      title: AssetBfa
+      description: A Bridged Fungible Asset.
     AssetIfa:
       properties:
         asset_id:
@@ -1219,12 +1429,20 @@ components:
               type: array
             - type: 'null'
           title: Ifa
+        bfa:
+          anyOf:
+            - items:
+                $ref: '#/components/schemas/AssetBfa'
+              type: array
+            - type: 'null'
+          title: Bfa
       type: object
       required:
         - nia
         - uda
         - cfa
         - ifa
+        - bfa
       title: Assets
       description: Assets owned by the wallet, grouped by schema.
     Assignment:
@@ -1232,6 +1450,7 @@ components:
         - type: string
           enum:
             - NonFungible
+            - BridgeRight
             - LinkRight
             - Any
         - type: object
@@ -1251,7 +1470,8 @@ components:
       title: Assignment
       description: >-
         An RGB assignment, serialized as an externally tagged enum: unit
-        variants are plain strings ("NonFungible", "LinkRight", "Any"),
+        variants are plain strings ("NonFungible", "BridgeRight", "LinkRight",
+        "Any"),
         data-carrying variants are single-key objects (e.g. {"Fungible": 100}).
     Balance:
       properties:
@@ -1358,6 +1578,60 @@ components:
         - error
       title: ErrorResponse
       description: The envelope returned by every non-2xx response.
+    BurnBeginRequestModel:
+      properties:
+        asset_id:
+          type: string
+          title: Asset Id
+        amount:
+          type: integer
+          title: Amount
+          description: Amount to burn, in the asset's smallest unit. Must be non-zero.
+        burn_recipient:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Burn Recipient
+          description: >-
+            Hex-encoded 32 bytes (optional `0x` prefix) identifying who receives
+            the released funds. Required for BFA.
+        fee_rate:
+          type: integer
+          title: Fee Rate
+          default: 1
+        min_confirmations:
+          type: integer
+          title: Min Confirmations
+          default: 1
+      type: object
+      required:
+        - asset_id
+        - amount
+      title: BurnBeginRequestModel
+    GetConsignmentRequestModel:
+      properties:
+        asset_id:
+          type: string
+          title: Asset Id
+        txid:
+          type: string
+          title: Txid
+          description: TXID of the send or burn that produced the consignment.
+      type: object
+      required:
+        - asset_id
+        - txid
+      title: GetConsignmentRequestModel
+    GetConsignmentResponse:
+      properties:
+        bytes_hex:
+          type: string
+          title: Bytes Hex
+          description: Raw consignment file, hex encoded.
+      type: object
+      required:
+        - bytes_hex
+      title: GetConsignmentResponse
     FailTransferRequestModel:
       properties:
         batch_transfer_idx:
@@ -1573,8 +1847,8 @@ components:
           type: integer
           title: Duration Seconds
           description: >-
-            How long the invoice stays valid, in seconds from now. Send `null`
-            for an invoice that never expires.
+            How long the invoice stays valid, in seconds from now. Invoices
+            always expire: `null` uses the default.
           default: 3600
       type: object
       title: RgbInvoiceRequestModel
@@ -1600,9 +1874,16 @@ components:
           type: integer
           title: Min Confirmations
           default: 1
+        expiration_timestamp:
+          type: integer
+          title: Expiration Timestamp
+          description: >-
+            Absolute Unix deadline from the recipient invoice; for a batch, the
+            earliest one. Must be in the future.
       type: object
       required:
         - recipient_map
+        - expiration_timestamp
       title: SendAssetBeginRequestModel
     SendAssetEndRequestModel:
       properties:
@@ -1823,6 +2104,7 @@ components:
       enum:
         - WaitingCounterparty
         - WaitingSafeHeight
+        - WaitingBroadcast
         - WaitingConfirmations
         - Settled
         - Failed
@@ -1880,12 +2162,21 @@ components:
         exists:
           type: boolean
           title: Exists
+        derivation_index:
+          anyOf:
+            - type: integer
+            - type: 'null'
+          title: Derivation Index
+          description: >-
+            Derivation index of the UTXO's script pubkey; null while the UTXO
+            does not exist on-chain yet.
       type: object
       required:
         - outpoint
         - btc_amount
         - colorable
         - exists
+        - derivation_index
       title: Utxo
     WitnessData:
       properties:

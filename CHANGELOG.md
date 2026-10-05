@@ -3,6 +3,37 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Breaking
+
+- `/wallet/sendbegin` requires `expiration_timestamp`: the recipient invoice's
+  absolute Unix deadline (the earliest one for a batch). A missing, past or
+  out-of-range value is rejected with `InvalidExpiration`.
+- `/wallet/receive` invoices always expire: `duration_seconds: null` now means
+  the default one hour instead of "never expires".
+
+### Added
+
+- Opt-in BFA support: set `bfa_enabled = true` and `eth_rpc_url` in `[wallet]`.
+  Wallets then accept the BFA schema and validate BFA consignments against the
+  EVM RPC. Without the opt-in wallets stay NIA-only.
+- `/wallet/burnbegin` and `/wallet/burnend` burn BFA assets with a hex
+  `burn_recipient` (32 bytes).
+- `/wallet/getconsignment` returns the hex consignment of a send or burn by
+  `asset_id` and `txid`.
+
+### Changed
+
+- Responses follow the pinned rgb-lib models: `listassets` has a `bfa` group,
+  transfers can be `WaitingBroadcast`, allocations can be `BridgeRight` and
+  UTXOs carry `derivation_index`.
+- `/wallet/sendbegin` rejects a recipient total above `u64::MAX` per asset
+  with 400 instead of crashing the wallet thread, and a panic inside one
+  wallet no longer stops the service for the others.
+- rgb-lib pinned to tag `v0.3.0-beta.43-bfa`, with its BFA RGB crate patches
+  mirrored in `[patch.crates-io]`.
+
 ## [0.2.0] - 2026-08-03
 
 ### Breaking
