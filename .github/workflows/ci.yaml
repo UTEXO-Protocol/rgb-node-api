@@ -29,10 +29,16 @@ jobs:
           toolchain: stable
           components: rustfmt, clippy
           cache: true
-      # rgb-lib is declared as an ssh:// git dependency but the repo is public,
-      # so rewrite to anonymous HTTPS to fetch it without any SSH key/secret.
+      # Cargo pulls git dependencies directly from GitHub. Route both HTTPS and
+      # SSH-style URLs through token-authenticated HTTPS so private forks can be
+      # fetched non-interactively on CI runners. Prefer ORG_REPO_READ_TOKEN
+      # when configured; otherwise fall back to the default workflow token.
       - name: Configure git for cargo git deps
-        run: git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
+        env:
+          GITHUB_AUTH_TOKEN: ${{ secrets.ORG_REPO_READ_TOKEN != '' && secrets.ORG_REPO_READ_TOKEN || github.token }}
+        run: |
+          git config --global url."https://x-access-token:${GITHUB_AUTH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          git config --global url."https://x-access-token:${GITHUB_AUTH_TOKEN}@github.com/".insteadOf "ssh://git@github.com/"
       - name: cargo fmt --check
         run: cargo fmt --all -- --check
       - name: cargo clippy
@@ -48,7 +54,11 @@ jobs:
           toolchain: stable
           cache: true
       - name: Configure git for cargo git deps
-        run: git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
+        env:
+          GITHUB_AUTH_TOKEN: ${{ secrets.ORG_REPO_READ_TOKEN != '' && secrets.ORG_REPO_READ_TOKEN || github.token }}
+        run: |
+          git config --global url."https://x-access-token:${GITHUB_AUTH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          git config --global url."https://x-access-token:${GITHUB_AUTH_TOKEN}@github.com/".insteadOf "ssh://git@github.com/"
       - name: cargo check
         run: cargo check --all-targets
       - name: cargo test
