@@ -33,7 +33,7 @@ All notable changes to this project are documented here. The format follows
 - Responses follow the pinned rgb-lib models: `listassets` has a `bfa` group,
   transfers can be `WaitingBroadcast`, allocations can be `BridgeRight` and
   UTXOs carry `derivation_index`.
-- rgb-lib pinned to tag `v0.3.0-beta.43-bfa`, with its BFA RGB crate patches
+- rgb-lib pinned to tag `0.3.0-beta.46-bfa`, with its BFA RGB crate patches
   mirrored in `[patch.crates-io]`.
 
 ## [0.2.0] - 2026-08-03
