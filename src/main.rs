@@ -30,6 +30,9 @@ async fn main() -> anyhow::Result<()> {
 
     let contents = std::fs::read_to_string(args.config)?;
     let cfg: Config = toml::from_str(&contents)?;
+    // Fail fast on a BFA opt-in without an EVM RPC, instead of on the first
+    // wallet registration.
+    cfg.wallet.supported_schemas()?;
 
     let tasker = TaskTracker::new();
     let cancel = CancellationToken::new();

@@ -3,6 +3,39 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Breaking
+
+- `/wallet/sendbegin` requires `expiration_timestamp`: the recipient invoice's
+  absolute Unix deadline (the earliest one for a batch). A missing, past or
+  out-of-range value is rejected with `InvalidExpiration`.
+- `/wallet/receive` invoices always expire: `duration_seconds: null` now means
+  the default one hour instead of "never expires".
+
+### Added
+
+- Opt-in BFA support: set `bfa_enabled = true` and `eth_rpc_url` in `[wallet]`.
+  Wallets then accept the BFA schema and validate BFA consignments against the
+  EVM RPC. BFA stays disabled without the opt-in.
+- IFA support on every network except mainnet, where rgb-lib does not allow
+  IFA. No configuration is needed.
+- `/wallet/issueassetifa` creates IFA tokens and reserves inflation rights.
+- `/wallet/inflatebegin` and `/wallet/inflateend` create additional IFA tokens
+  using the wallet's inflation rights and a PSBT signed by the client.
+- `/wallet/burnbegin` and `/wallet/burnend` support burning BFA and IFA assets.
+  BFA burns require a 32-byte `burn_recipient`, encoded as hex.
+- `/wallet/getconsignment` returns the hex consignment of a send or burn by
+  `asset_id` and `txid`.
+
+### Changed
+
+- Responses follow the pinned rgb-lib models: `listassets` has a `bfa` group,
+  transfers can be `WaitingBroadcast`, allocations can be `BridgeRight` and
+  UTXOs carry `derivation_index`.
+- rgb-lib pinned to tag `v0.3.0-beta.43-bfa`, with its BFA RGB crate patches
+  mirrored in `[patch.crates-io]`.
+
 ## [0.2.0] - 2026-08-03
 
 ### Breaking

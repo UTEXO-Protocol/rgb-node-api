@@ -31,6 +31,9 @@ btc_rpc_user = "dev"
 btc_rpc_password = "dev"
 indexer_address = "tcp://127.0.0.1:50001"
 proxy_address = ["rpc://127.0.0.1:3000/json-rpc"]
+# Optional BFA support; validation of BFA consignments reads the EVM RPC.
+# bfa_enabled = true
+# eth_rpc_url = "http://127.0.0.1:8545"
 ```
 
 Wallets are not configured in the file — they are registered at runtime via
@@ -69,10 +72,16 @@ The begin/end pattern allows clients to sign PSBTs externally:
 | POST | `/listtransfers` | List RGB transfers for an asset |
 | POST | `/blindreceive` | Generate RGB invoice |
 | POST | `/issueassetnia` | Issue new NIA token |
+| POST | `/issueassetifa` | Issue IFA tokens and reserve inflation rights |
+| POST | `/inflatebegin` | Create additional IFA tokens (unsigned PSBT) |
+| POST | `/inflateend` | Finalize IFA inflation (signed PSBT) |
 | POST | `/createutxosbegin` | Create UTXOs (unsigned PSBT) |
 | POST | `/createutxosend` | Finalize UTXO creation (signed PSBT) |
 | POST | `/sendbegin` | Send RGB token (unsigned PSBT) |
 | POST | `/sendend` | Finalize token send (signed PSBT) |
+| POST | `/burnbegin` | Burn BFA or IFA tokens (unsigned PSBT) |
+| POST | `/burnend` | Finalize token burn (signed PSBT) |
+| POST | `/getconsignment` | Get send/burn consignment by asset ID and TXID |
 | POST | `/failtransfers` | Mark transfers as failed |
 | POST | `/refresh` | Force wallet sync |
 | POST | `/drop` | Remove wallet from memory |

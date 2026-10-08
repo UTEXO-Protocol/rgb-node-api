@@ -80,6 +80,18 @@ pub(crate) enum WalletCmd {
         req: IssueNiaReq,
         resp: ResultChan<wallet::AssetNIA>,
     },
+    IssueIfaToken {
+        req: IssueIfaReq,
+        resp: ResultChan<wallet::AssetIFA>,
+    },
+    InflateBegin {
+        req: InflateBeginReq,
+        resp: ResultChan<String>,
+    },
+    InflateEnd {
+        psbt: String,
+        resp: ResultChan<wallet::OperationResult>,
+    },
     CreateUtxoBegin {
         req: CreateUtxoBeginReq,
         resp: ResultChan<String>,
@@ -95,6 +107,18 @@ pub(crate) enum WalletCmd {
     SendEnd {
         psbt: String,
         resp: ResultChan<wallet::OperationResult>,
+    },
+    BurnBegin {
+        req: BurnBeginReq,
+        resp: ResultChan<String>,
+    },
+    BurnEnd {
+        psbt: String,
+        resp: ResultChan<wallet::OperationResult>,
+    },
+    GetConsignment {
+        req: GetConsignmentReq,
+        resp: ResultChan<GetConsignmentRes>,
     },
     SendBtcBegin {
         req: SendBtcReq,
@@ -134,10 +158,16 @@ impl std::fmt::Display for WalletCmd {
             WalletCmd::TokenBalance { .. } => "TokenBalance",
             WalletCmd::Receive { .. } => "Receive",
             WalletCmd::IssueNiaToken { .. } => "IssueNiaToken",
+            WalletCmd::IssueIfaToken { .. } => "IssueIfaToken",
+            WalletCmd::InflateBegin { .. } => "InflateBegin",
+            WalletCmd::InflateEnd { .. } => "InflateEnd",
             WalletCmd::CreateUtxoBegin { .. } => "CreateUtxoBegin",
             WalletCmd::CreateUtxoEnd { .. } => "CreateUtxoEnd",
             WalletCmd::SendBegin { .. } => "SendBegin",
             WalletCmd::SendEnd { .. } => "SendEnd",
+            WalletCmd::BurnBegin { .. } => "BurnBegin",
+            WalletCmd::BurnEnd { .. } => "BurnEnd",
+            WalletCmd::GetConsignment { .. } => "GetConsignment",
             WalletCmd::SendBtcBegin { .. } => "SendBtcBegin",
             WalletCmd::SendBtcEnd { .. } => "SendBtcEnd",
             WalletCmd::AddReadOnlyWallet { .. } => "AddReadOnlyWallet",
@@ -349,7 +379,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                 .lock()
                 .unwrap()
                 .wallet
-                .list_transfers(wallet::AssetFilter::Any, None)
+                .list_transfers(wallet::AssetFilter::AnyOrNone, None)
             {
                 Ok(val) => resp.send(Ok(val)).is_ok(),
                 Err(err) => {
@@ -382,7 +412,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                 .lock()
                 .unwrap()
                 .wallet
-                .list_transfers(wallet::AssetFilter::Any, None)
+                .list_transfers(wallet::AssetFilter::AnyOrNone, None)
                 .map(|transfers| {
                     transfers
                         .into_iter()
@@ -536,7 +566,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                 req.donation,
                 req.fee_rate,
                 req.min_confirmations,
-                None,
+                req.expiration_timestamp,
                 false,
                 None,
             ) {
@@ -557,6 +587,66 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                     resp.send(Err(err)).is_ok()
                 }
             }
+        }
+        WalletCmd::BurnBegin { req, resp } => {
+            let res = req.burn_recipient_bytes().and_then(|burn_recipient| {
+                let mut w = wallet_state.lock().unwrap();
+                let wo = w.wallet_online;
+                w.wallet.burn_begin(
+                    wo,
+                    req.asset_id,
+                    req.amount,
+                    burn_recipient,
+                    req.fee_rate,
+                    req.min_confirmations,
+                    false,
+                )
+            });
+            match res {
+                Ok(val) => resp.send(Ok(val.psbt)).is_ok(),
+                Err(err) => {
+                    log_rgb_err!(err, "burn begin: wid={id} error={:?}", err);
+                    resp.send(Err(err)).is_ok()
+                }
+            }
+        }
+        WalletCmd::BurnEnd { psbt, resp } => {
+            let mut w = wallet_state.lock().unwrap();
+            let wo = w.wallet_online;
+            match w.wallet.burn_end(wo, psbt) {
+                Ok(val) => resp.send(Ok(val)).is_ok(),
+                Err(err) => {
+                    log_rgb_err!(err, "burn end: wid={id} error={:?}", err);
+                    resp.send(Err(err)).is_ok()
+                }
+            }
+        }
+        WalletCmd::GetConsignment { req, resp } => {
+            let res = req.validate_txid().and_then(|()| {
+                let w = wallet_state.lock().unwrap();
+                // Only an asset this wallet knows may name a path under it.
+                w.wallet.get_asset_metadata(req.asset_id.clone())?;
+                let path = w.wallet.get_send_consignment_path(&req.asset_id, &req.txid);
+                match std::fs::read(path) {
+                    Ok(bytes) => Ok(GetConsignmentRes {
+                        bytes_hex: hex::encode(bytes),
+                    }),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                        Err(rgb_lib::Error::NoConsignment)
+                    }
+                    Err(e) => Err(e.into()),
+                }
+            });
+            if let Err(err) = &res {
+                log_rgb_err!(
+                    err,
+                    "get consignment: wid={id} asset={} txid={} error={:?}",
+                    req.asset_id,
+                    req.txid,
+                    err
+                );
+            }
+            resp.send(res).is_ok()
         }
         WalletCmd::SendBtcBegin { req, resp } => {
             let mut w = wallet_state.lock().unwrap();
@@ -600,6 +690,50 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                     resp.send(Err(err)).is_ok()
                 }
             }
+        }
+        WalletCmd::IssueIfaToken { req, resp } => {
+            let w = wallet_state.lock().unwrap();
+            let res = w.wallet.issue_asset_ifa(
+                req.ticker,
+                req.name,
+                req.precision,
+                req.amounts,
+                req.inflation_amounts,
+                req.reject_list_url,
+                None,
+            );
+            if let Err(err) = &res {
+                log_rgb_err!(err, "issue IFA: wid={id} error={:?}", err);
+            }
+            resp.send(res).is_ok()
+        }
+        WalletCmd::InflateBegin { req, resp } => {
+            let mut w = wallet_state.lock().unwrap();
+            let wo = w.wallet_online;
+            let res = w
+                .wallet
+                .inflate_begin(
+                    wo,
+                    req.asset_id,
+                    req.inflation_amounts,
+                    req.fee_rate,
+                    req.min_confirmations,
+                    false,
+                )
+                .map(|res| res.psbt);
+            if let Err(err) = &res {
+                log_rgb_err!(err, "inflate begin: wid={id} error={:?}", err);
+            }
+            resp.send(res).is_ok()
+        }
+        WalletCmd::InflateEnd { psbt, resp } => {
+            let mut w = wallet_state.lock().unwrap();
+            let wo = w.wallet_online;
+            let res = w.wallet.inflate_end(wo, psbt);
+            if let Err(err) = &res {
+                log_rgb_err!(err, "inflate end: wid={id} error={:?}", err);
+            }
+            resp.send(res).is_ok()
         }
         WalletCmd::RefreshWallet { resp } => {
             let mut w = wallet_state.lock().unwrap();
