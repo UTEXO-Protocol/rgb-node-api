@@ -435,11 +435,12 @@ pub async fn drop(
     ctx: Data<WalletCtx>,
     wallet_key: XWalletKey,
 ) -> Result<Json<EmptyRes>, ApiError> {
-    // Remove the wallet from memory without re-registering it first.
-    ctx.with_id(wallet_key.master_fingerprint)
-        .drop_wallet()
-        .await
-        .map_err(map_rgb_error)?;
+    // Re-register and validate the xpub pair against the fingerprint first, like
+    // every other endpoint: otherwise anyone presenting a bare 4-byte
+    // master fingerprint could evict someone else's in-memory wallet and force
+    // a full re-register + resync, breaking in-flight begin/end flows.
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    ctx.drop_wallet().await.map_err(map_rgb_error)?;
     Ok(Json(EmptyRes {}))
 }
 
