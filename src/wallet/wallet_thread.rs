@@ -302,6 +302,7 @@ impl WalletThread {
                         Some(id) => id,
                         None => {
                             log::error!("Command {} requires a wallet ID", cmd);
+                            respond_wallet_missing(cmd);
                             continue;
                         }
                     };
@@ -311,9 +312,115 @@ impl WalletThread {
                         handle_wallet_cmd(wallet_state, id.clone(), cmd);
                     } else {
                         log::warn!("Wallet not found: {id}");
+                        respond_wallet_missing(cmd);
                     }
                 }
             }
+        }
+    }
+}
+
+/// Answer a command whose wallet id is missing or unknown instead of dropping
+/// the response: otherwise the caller's oneshot closes and `send_cmd` reports
+/// "wallet thread is dead" (HTTP 500), indistinguishable from a dead server
+/// and an invitation to retry-storm. The wallet id is the master fingerprint,
+/// so an unknown one is reported as an invalid fingerprint (HTTP 400).
+fn respond_wallet_missing(cmd: WalletCmd) {
+    let err = rgb_lib::Error::InvalidFingerprint;
+    match cmd {
+        WalletCmd::Refresh {} => {}
+        WalletCmd::RefreshWallet { resp } => {
+            let _ = resp.send(Err(err));
+        }
+        WalletCmd::DropWallet { resp } => {
+            let _ = resp.send(Err(err));
+        }
+        WalletCmd::Stop { resp } => {
+            let _ = resp.send(Err(err));
+        }
+        WalletCmd::WalletInfo { resp } => {
+            let _ = resp.send(Err(err));
+        }
+        WalletCmd::Backup { resp, .. } => {
+            let _ = resp.send(Err(err));
+        }
+        WalletCmd::Address { resp } => {
+            let _ = resp.send(Err(err));
+        }
+        WalletCmd::Assets { resp } => {
+            let _ = resp.send(Err(err));
+        }
+        WalletCmd::Transfers { resp } => {
+            let _ = resp.send(Err(err));
+        }
+        WalletCmd::FailTransfer { resp, .. } => {
+            let _ = resp.send(Err(err));
+        }
+        WalletCmd::TransfersByAsset { resp, .. } => {
+            let _ = resp.send(Err(err));
+        }
+        WalletCmd::TransfersByRecipient { resp, .. } => {
+            let _ = resp.send(Err(err));
+        }
+        WalletCmd::Transactions { resp } => {
+            let _ = resp.send(Err(err));
+        }
+        WalletCmd::ListUnspends { resp } => {
+            let _ = resp.send(Err(err));
+        }
+        WalletCmd::AssetInfo { resp, .. } => {
+            let _ = resp.send(Err(err));
+        }
+        WalletCmd::BtcBalance { resp } => {
+            let _ = resp.send(Err(err));
+        }
+        WalletCmd::TokenBalance { resp, .. } => {
+            let _ = resp.send(Err(err));
+        }
+        WalletCmd::Receive { resp, .. } => {
+            let _ = resp.send(Err(err));
+        }
+        WalletCmd::IssueNiaToken { resp, .. } => {
+            let _ = resp.send(Err(err));
+        }
+        WalletCmd::IssueIfaToken { resp, .. } => {
+            let _ = resp.send(Err(err));
+        }
+        WalletCmd::InflateBegin { resp, .. } => {
+            let _ = resp.send(Err(err));
+        }
+        WalletCmd::InflateEnd { resp, .. } => {
+            let _ = resp.send(Err(err));
+        }
+        WalletCmd::CreateUtxoBegin { resp, .. } => {
+            let _ = resp.send(Err(err));
+        }
+        WalletCmd::CreateUtxoEnd { resp, .. } => {
+            let _ = resp.send(Err(err));
+        }
+        WalletCmd::SendBegin { resp, .. } => {
+            let _ = resp.send(Err(err));
+        }
+        WalletCmd::SendEnd { resp, .. } => {
+            let _ = resp.send(Err(err));
+        }
+        WalletCmd::BurnBegin { resp, .. } => {
+            let _ = resp.send(Err(err));
+        }
+        WalletCmd::BurnEnd { resp, .. } => {
+            let _ = resp.send(Err(err));
+        }
+        WalletCmd::GetConsignment { resp, .. } => {
+            let _ = resp.send(Err(err));
+        }
+        WalletCmd::SendBtcBegin { resp, .. } => {
+            let _ = resp.send(Err(err));
+        }
+        WalletCmd::SendBtcEnd { resp, .. } => {
+            let _ = resp.send(Err(err));
+        }
+        WalletCmd::AddReadOnlyWallet { resp, .. } => {
+            let _ = resp.send(Err(err));
         }
     }
 }
