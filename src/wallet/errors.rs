@@ -66,32 +66,14 @@ pub fn error_kind(err: &Error) -> String {
 /// silently landing in some catch-all bucket.
 pub fn classify(err: &Error) -> ErrorClass {
     match err {
-        Error::PsbtOperationNotFound { .. } => ErrorClass::NotFound,
-        Error::BatchTransferAlreadyExists { .. }
-        | Error::CannotProvideOutOfBandAck { .. }
-        | Error::CannotProvideOutOfBandConsignment { .. }
-        | Error::InsufficientConfirmations { .. }
-        | Error::InvalidPsbtOperationStatus { .. }
-        | Error::WalletSettingMismatch { .. }
-        | Error::UnexpectedTransfer { .. }
-        | Error::UnsafeTransferHistory { .. } => ErrorClass::Conflict,
-        Error::InexistentWalletManifest { .. } => ErrorClass::Internal,
-        Error::UnsupportedBridge { .. }
-        | Error::UnsupportedWalletManifestVersion { .. } => ErrorClass::Unsupported,
-        Error::InvalidEthRpcUrl { .. }
-        | Error::InvalidBurnRecipient { .. }
-        | Error::MissingBurnRecipient
-        | Error::NoBridgeRights
-        | Error::NoMaxAllocationsPerUtxo
-        | Error::WitnessOutputMismatch { .. } => ErrorClass::BadInput,
-
         // -- the entity asked for does not exist -----------------------------
         Error::AssetNotFound { .. }
         | Error::BatchTransferNotFound { .. }
         | Error::MultisigOperationNotFound { .. }
         | Error::UnknownTransfer { .. }
         | Error::NoConsignment
-        | Error::VssBackupNotFound => ErrorClass::NotFound,
+        | Error::NoMedia
+        | Error::OperationNotFound => ErrorClass::NotFound,
 
         // -- specific, actionable input problems -----------------------------
         Error::InvalidAddress { .. } => ErrorClass::InvalidAddress,
@@ -117,6 +99,7 @@ pub fn classify(err: &Error) -> ErrorClass {
         | Error::InvalidRecipientNetwork
         | Error::InvalidTransportEndpoint { .. }
         | Error::InvalidTransportEndpoints { .. }
+        | Error::InvoiceExpired
         | Error::NoValidTransportEndpoint
         | Error::RecipientIDDuplicated
         | Error::UnsupportedTransportType => ErrorClass::InvalidRecipient,
@@ -126,22 +109,43 @@ pub fn classify(err: &Error) -> ErrorClass {
         | Error::CannotAbortPendingVanillaTx
         | Error::CannotChangeOnline
         | Error::CannotDeleteBatchTransfer
+        | Error::CannotEndTransfer { .. }
         | Error::CannotFailBatchTransfer
+        | Error::CannotProvideOutOfBandAck { .. }
+        | Error::CannotProvideOutOfBandConsignment { .. }
         | Error::FileAlreadyExists { .. }
+        | Error::InvoiceNotReserved
+        | Error::InvoiceQuotaExceeded
+        | Error::LastMintRight
+        // The mint event may still appear on the EVM chain: retry later.
+        | Error::MintEventNotFound { .. }
+        | Error::MultisigLegacyOperation { .. }
         | Error::MultisigOperationInProgress
         | Error::MultisigTransferStatusMismatch
+        | Error::OperationExpired
+        | Error::ProxyCannotChange { .. }
+        | Error::ProxyTooManyMedia
+        | Error::ProxyTxAlreadyReleased
         | Error::RecipientIDAlreadyUsed
-        | Error::WalletDirAlreadyExists { .. } => ErrorClass::Conflict,
+        | Error::SignedTxCleared
+        | Error::TransferExpired
+        | Error::TransferIDDeleted
+        | Error::TransferIDInUse
+        | Error::WalletDirAlreadyExists { .. }
+        | Error::WalletSettingMismatch { .. } => ErrorClass::Conflict,
 
         // -- asked for something this wallet cannot do -----------------------
-        Error::AddressReuseDisabled
-        | Error::CannotUseIfaOnMainnet
+        Error::CannotUseSchemaOnMainnet { .. }
+        // The asset's bridge lives on an EVM chain this node has no RPC for.
+        | Error::NoEvmRpcUrl { .. }
         | Error::NoSupportedSchemas
         | Error::UnsupportedBackupVersion { .. }
         | Error::UnsupportedBurn { .. }
         | Error::UnsupportedInflation { .. }
         | Error::UnsupportedLayer1 { .. }
-        | Error::UnsupportedSchema { .. } => ErrorClass::Unsupported,
+        | Error::UnsupportedMint { .. }
+        | Error::UnsupportedSchema { .. }
+        | Error::UnsupportedWalletManifestVersion { .. } => ErrorClass::Unsupported,
 
         // -- a dependency is down or unreachable -----------------------------
         Error::CannotEstimateFees
@@ -149,36 +153,43 @@ pub fn classify(err: &Error) -> ErrorClass {
         | Error::FailedBroadcast { .. }
         | Error::FailedIssuance { .. }
         | Error::Indexer { .. }
-        | Error::MpcProvider { .. }
         | Error::MultisigHubService { .. }
         | Error::Network { .. }
         | Error::Offline
         | Error::OnlineNeeded
         | Error::Proxy { .. }
+        | Error::ProxyDraining
         | Error::RejectListService { .. }
-        | Error::RestClientBuild { .. }
-        | Error::VssAuth { .. }
-        | Error::VssError { .. }
-        | Error::VssVersionConflict { .. } => ErrorClass::Unavailable,
+        | Error::RestClientBuild { .. } => ErrorClass::Unavailable,
 
         // -- our fault -------------------------------------------------------
         Error::Database { .. }
         | Error::Inconsistency { .. }
         | Error::InexistentDataDir
+        | Error::InexistentWalletManifest { .. }
         | Error::Internal { .. }
         | Error::IO { .. }
         | Error::MultisigCannotMarkOperationProcessed { .. }
         | Error::MultisigCannotRespondToOperation { .. }
         | Error::MultisigUnexpectedData { .. }
-        | Error::RestoredBackupInconsistent { .. }
         | Error::RgbInspection { .. }
+        // Node configuration: the EVM RPC and the proxy auth keys are ours.
+        | Error::DuplicateProxyAuthKey { .. }
+        | Error::EvmChainIdMismatch { .. }
+        | Error::InvalidEvmRpcUrl { .. }
+        | Error::InvalidProxyAuthKey { .. }
+        | Error::InvalidProxyAuthSignature
         // The node keeps watch-only wallets on purpose (signing happens in the
         // client), so hitting a signing-only path is a bug on our side.
         | Error::WatchOnly => ErrorClass::Internal,
 
         // -- everything else is invalid request data -------------------------
         Error::BitcoinNetworkMismatch
+        | Error::ConsignmentRejected { .. }
+        | Error::ConsignmentValidationFailed { .. }
         | Error::EmptyFile { .. }
+        | Error::ExpirationInvalid
+        | Error::HashMismatch
         | Error::FingerprintMismatch
         | Error::InvalidAmountZero
         | Error::InvalidAssignment
@@ -186,12 +197,16 @@ pub fn classify(err: &Error) -> ErrorClass {
         | Error::InvalidBitcoinKeys
         | Error::InvalidBitcoinNetwork { .. }
         | Error::InvalidColoringInfo { .. }
+        | Error::InvalidBurnReason { .. }
         | Error::InvalidConsignment
-        | Error::InvalidContractLink { .. }
+        | Error::InvalidContentSignature
         | Error::InvalidCosigner { .. }
         | Error::InvalidDetails { .. }
         | Error::InvalidElectrum { .. }
+        | Error::InvalidEncryptedBlob { .. }
+        | Error::InvalidEndpointAuthSignature
         | Error::InvalidEstimationBlocks
+        | Error::InvalidEvmContractAddress { .. }
         | Error::InvalidExpiration
         | Error::InvalidFilePath { .. }
         | Error::InvalidFingerprint
@@ -202,22 +217,27 @@ pub fn classify(err: &Error) -> ErrorClass {
         | Error::InvalidPrecision { .. }
         | Error::InvalidPubkey { .. }
         | Error::InvalidRejectListUrl { .. }
-        | Error::InvalidRightOutpoint { .. }
         | Error::InvalidTicker { .. }
         | Error::InvalidTxid
         | Error::InvalidVanillaKeychain
         | Error::InvalidWitnessVersion { .. }
+        // The mint will never be confirmed.
+        | Error::MintEventOutOfScanWindow { .. }
         | Error::MultisigUserNotCosigner
         | Error::NoBurnAmount
         | Error::NoCosignersSupplied
         | Error::NoInflationAmounts
         | Error::NoIssuanceAmounts
         | Error::NoKeysSupplied
+        | Error::NoMaxAllocationsPerUtxo
+        | Error::NoMintRights
+        | Error::OffchainTxidNotFound { .. }
         | Error::OutputBelowDustLimit
         | Error::TooHighInflationAmounts
         | Error::TooHighIssuanceAmounts
         | Error::TooManyCosigners
         | Error::UnknownRgbSchema { .. }
+        | Error::WrongOperation { .. }
         | Error::WrongPassword => ErrorClass::BadInput,
     }
 }

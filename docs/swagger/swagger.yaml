@@ -1599,19 +1599,6 @@ components:
             - type: string
             - type: 'null'
           title: Reject List Url
-        issuance_link_right_outpoint:
-          $ref: '#/components/schemas/Outpoint'
-          description: >-
-            Where the link right was allocated at issuance. Omitted when the
-            asset has none.
-        linked_from_asset_id:
-          type: string
-          title: Linked From Asset Id
-          description: Parent asset declared at genesis. Omitted when none.
-        linked_to_asset_id:
-          type: string
-          title: Linked To Asset Id
-          description: Child asset linked to this one. Omitted when none.
       type: object
       required:
         - asset_id
@@ -1774,8 +1761,7 @@ components:
         - type: string
           enum:
             - NonFungible
-            - BridgeRight
-            - LinkRight
+            - MintRight
             - Any
         - type: object
           properties:
@@ -1794,8 +1780,7 @@ components:
       title: Assignment
       description: >-
         An RGB assignment, serialized as an externally tagged enum: unit
-        variants are plain strings ("NonFungible", "BridgeRight", "LinkRight",
-        "Any"),
+        variants are plain strings ("NonFungible", "MintRight", "Any"),
         data-carrying variants are single-key objects (e.g. {"Fungible": 100}).
     Balance:
       properties:
@@ -1917,10 +1902,9 @@ components:
             - type: 'null'
           title: Burn Recipient
           description: >-
-            Hex-encoded 32 bytes (optional `0x` prefix) identifying who receives
-            the released funds. Required for BFA; optional and unused for IFA.
-            When provided, valid hex encoding and a 32-byte length are required
-            for both schemas.
+            Hex-encoded 32 bytes (optional `0x` prefix) committed in the burn as
+            rgb-lib's burn reason, e.g. a hash binding the burn to the receiver
+            of the released funds. Also accepted as `burn_reason`.
         fee_rate:
           type: integer
           title: Fee Rate
@@ -2148,12 +2132,17 @@ components:
         batch_transfer_idx:
           type: integer
           title: Batch Transfer Idx
+        public_key:
+          type: string
+          title: Public Key
+          description: Recipient's Ed25519 public key (hex), as embedded in the invoice.
       type: object
       required:
         - invoice
         - recipient_id
         - expiration_timestamp
         - batch_transfer_idx
+        - public_key
       title: ReceiveData
     Recipient:
       properties:
@@ -2172,6 +2161,33 @@ components:
             type: string
           type: array
           title: Transport Endpoints
+        public_key:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Public Key
+          description: >-
+            The invoice `pk` field (hex Ed25519 key). Required when
+            `transport_endpoints` is not empty.
+        encryption:
+          type: string
+          enum:
+            - Required
+            - Unsupported
+            - Optional
+          default: Required
+          title: Encryption
+          description: >-
+            The invoice `enc` field: `Unsupported` for `enc=0`, `Optional` for
+            `enc=1`, `Required` when absent.
+        expiration_timestamp:
+          anyOf:
+            - type: integer
+            - type: 'null'
+          title: Expiration Timestamp
+          description: >-
+            The invoice expiration. Required when `transport_endpoints` is not
+            empty.
       type: object
       required:
         - recipient_id
@@ -2298,15 +2314,18 @@ components:
           title: Min Confirmations
           default: 1
         expiration_timestamp:
-          type: integer
+          anyOf:
+            - type: integer
+            - type: 'null'
           title: Expiration Timestamp
           description: >-
-            Absolute Unix deadline from the recipient invoice; for a batch, the
-            earliest one. Must be in the future.
+            Absolute Unix deadline of the transfer. At least 5 minutes ahead
+            and, for proxy recipients, at least 10 minutes before the earliest
+            invoice expiration. Defaults to the earliest recipient invoice
+            expiration minus 10 minutes.
       type: object
       required:
         - recipient_map
-        - expiration_timestamp
       title: SendAssetBeginRequestModel
     SendAssetEndRequestModel:
       properties:
@@ -2452,11 +2471,6 @@ components:
             - type: string
             - type: 'null'
           title: Recipient Id
-        proxy_recipient_id:
-          anyOf:
-            - type: string
-            - type: 'null'
-          title: Proxy Recipient Id
         receive_utxo:
           anyOf:
             - $ref: '#/components/schemas/Outpoint'
@@ -2475,6 +2489,13 @@ components:
             $ref: '#/components/schemas/TransferTransportEndpoint'
           type: array
           title: Transport Endpoints
+          description: Recipient transport endpoints for the transfer.
+        sender_transport_endpoint:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Sender Transport Endpoint
+          description: The sender's proxy, where recipients post their ACK.
         invoice_string:
           anyOf:
             - type: string
@@ -2520,7 +2541,7 @@ components:
         - Send
         - Inflation
         - Burn
-        - Link
+        - Mint
       title: TransferKind
     TransferStatus:
       type: string

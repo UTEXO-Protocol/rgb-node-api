@@ -7,9 +7,27 @@ All notable changes to this project are documented here. The format follows
 
 ### Breaking
 
-- `/wallet/sendbegin` requires `expiration_timestamp`: the recipient invoice's
-  absolute Unix deadline (the earliest one for a batch). A missing, past or
-  out-of-range value is rejected with `InvalidExpiration`.
+- rgb-lib moved to `UTEXO-Protocol/rgb-lib-bfa` tag
+  `v0.3.0-beta.7-upstream-dev-bfa.3`. Its wallet database history diverges
+  from the previous `0.3.0-beta.46-bfa` tag: use a fresh `data_dir`, do not
+  open wallets created by the previous build. It speaks proxy protocol v1,
+  so the RGB proxy must be `rgb-proxy-server` 0.4.0 or later.
+- BFA config needs `eth_chain_id` next to `eth_rpc_url`, and BFA is rejected on
+  mainnet.
+- `/wallet/sendbegin` recipients carry their invoice's `public_key`,
+  `encryption` (default `Required`, as for an invoice without `enc`) and
+  `expiration_timestamp`; rgb-lib needs the key and the expiration for proxy
+  recipients. The transfer's `expiration_timestamp` is optional and defaults
+  to the earliest invoice expiration minus 10 minutes; an explicit one must be
+  at least 5 minutes ahead and, for proxy recipients, at least 10 minutes
+  before the earliest invoice expiration.
+- Responses follow the new rgb-lib models: BFA uses mint rights
+  (`MintRight` allocations, `Mint` transfers, `mint` in assignment totals)
+  instead of bridge and link rights; transfers gain
+  `sender_transport_endpoint` and lose `proxy_recipient_id`; receive data gains
+  `public_key`; IFA link fields are gone.
+- `/wallet/burnbegin` passes `burn_recipient` to rgb-lib as the burn reason
+  (also accepted as `burn_reason`): 32 bytes, hex, optional `0x`.
 - `/wallet/receive` invoices always expire: `duration_seconds: null` now means
   the default one hour instead of "never expires".
 
@@ -37,10 +55,10 @@ All notable changes to this project are documented here. The format follows
 ### Changed
 
 - Responses follow the pinned rgb-lib models: `listassets` has a `bfa` group,
-  transfers can be `WaitingBroadcast`, allocations can be `BridgeRight` and
+  transfers can be `WaitingBroadcast`, allocations can be `MintRight` and
   UTXOs carry `derivation_index`.
-- rgb-lib pinned to tag `0.3.0-beta.46-bfa`, with its BFA RGB crate patches
-  mirrored in `[patch.crates-io]`.
+- rgb-lib pinned to `rgb-lib-bfa` tag `v0.3.0-beta.7-upstream-dev-bfa.3`. BFA
+  is in the published RGB crates, so `[patch.crates-io]` is gone.
 
 ## [0.2.0] - 2026-08-03
 
