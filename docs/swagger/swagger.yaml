@@ -659,6 +659,106 @@ paths:
           $ref: '#/components/responses/InternalError'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
+  /wallet/sendbtcbegin:
+    post:
+      summary: Send BTC Begin
+      description: >-
+        Prepare a BTC send from the wallet's vanilla side. Sign the returned
+        PSBT client-side and submit it to `/wallet/sendbtcend`.
+      operationId: send_btc_begin_wallet_sendbtcbegin_post
+      parameters:
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendBtcBeginRequestModel'
+      responses:
+        '200':
+          description: The unsigned PSBT to be signed by the client.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PsbtResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /wallet/sendbtcend:
+    post:
+      summary: Send BTC End
+      description: Finalize and broadcast a BTC send with the client-signed PSBT.
+      operationId: send_btc_end_wallet_sendbtcend_post
+      parameters:
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendAssetEndRequestModel'
+      responses:
+        '200':
+          description: The broadcast transaction.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendBtcResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /wallet/burnbegin:
     post:
       summary: Burn Begin
@@ -819,6 +919,61 @@ paths:
     post:
       summary: Generate Invoice
       operationId: generate_invoice_wallet_blindreceive_post
+      parameters:
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RgbInvoiceRequestModel'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReceiveData'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /wallet/witnessreceive:
+    post:
+      summary: Generate Witness Invoice
+      description: >-
+        Like `/wallet/blindreceive`, but the invoice is paid to a new output of
+        the sender's transaction (a `wvout:` recipient) instead of a blinded
+        UTXO this wallet already holds, so no colorable UTXO is needed up front.
+        The sender funds that output (`witness_data.amount_sat`).
+      operationId: generate_witness_invoice_wallet_witnessreceive_post
       parameters:
         - name: xpub-van
           in: header
@@ -1927,8 +2082,14 @@ components:
     ListTransfersRequestModel:
       properties:
         asset_id:
-          type: string
+          anyOf:
+            - type: string
+            - type: 'null'
           title: Asset Id
+          description: >-
+            The asset whose transfers to list. `null` lists the transfers not yet
+            tied to any asset (receives created without one). The field is
+            required either way.
       type: object
       required:
         - asset_id
@@ -2091,6 +2252,36 @@ components:
       type: object
       title: RgbInvoiceRequestModel
       description: Request model for RGB invoices.
+    SendBtcBeginRequestModel:
+      properties:
+        address:
+          type: string
+          title: Address
+          description: Bitcoin address to pay.
+        amount:
+          type: integer
+          title: Amount
+          description: Amount to send, in sats.
+        fee_rate:
+          type: integer
+          title: Fee Rate
+          description: Bitcoin transaction fee rate in sat/vB.
+      type: object
+      required:
+        - address
+        - amount
+        - fee_rate
+      title: SendBtcBeginRequestModel
+    SendBtcResponse:
+      properties:
+        txid:
+          type: string
+          title: Txid
+          description: TXID of the broadcast transaction.
+      type: object
+      required:
+        - txid
+      title: SendBtcResponse
     SendAssetBeginRequestModel:
       properties:
         recipient_map:

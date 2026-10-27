@@ -64,6 +64,11 @@ impl ApiService for WalletSrv {
                         resource("/getconsignment").route(post().to(node_api::get_consignment)),
                     )
                     .service(resource("/blindreceive").route(post().to(node_api::blind_receive)))
+                    .service(
+                        resource("/witnessreceive").route(post().to(node_api::witness_receive)),
+                    )
+                    .service(resource("/sendbtcbegin").route(post().to(node_api::send_btc_begin)))
+                    .service(resource("/sendbtcend").route(post().to(node_api::send_btc_end)))
                     .service(resource("/failtransfers").route(post().to(node_api::fail_transfers)))
                     .service(
                         resource("/listtransactions").route(post().to(node_api::list_transactions)),

@@ -6,6 +6,7 @@ use rgb_lib::wallet::{
 };
 
 use super::Config;
+use super::ReceiveKind;
 
 fn unix_now() -> u64 {
     std::time::SystemTime::now()
@@ -70,8 +71,9 @@ impl RgbWalletState {
         })
     }
 
-    pub fn blind_receive_token(
+    pub fn receive_token(
         &mut self,
+        kind: ReceiveKind,
         asset_id: Option<String>,
         assigment: rgb_lib::Assignment,
         duration_seconds: Option<u32>,
@@ -87,13 +89,22 @@ impl RgbWalletState {
         let expiration_timestamp =
             unix_now().saturating_add(u64::from(duration_seconds.unwrap_or(3600)));
 
-        let rd = self.wallet.blind_receive(
-            asset_id,
-            assigment,
-            expiration_timestamp,
-            transport_endpoints,
-            min_confirmations,
-        )?;
+        let rd = match kind {
+            ReceiveKind::Blind => self.wallet.blind_receive(
+                asset_id,
+                assigment,
+                expiration_timestamp,
+                transport_endpoints,
+                min_confirmations,
+            )?,
+            ReceiveKind::Witness => self.wallet.witness_receive(
+                asset_id,
+                assigment,
+                expiration_timestamp,
+                transport_endpoints,
+                min_confirmations,
+            )?,
+        };
 
         Ok(rd)
     }

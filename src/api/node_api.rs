@@ -114,11 +114,6 @@ pub struct RegisterRes {
 }
 
 #[derive(serde::Deserialize)]
-pub struct AssetId {
-    pub asset_id: String,
-}
-
-#[derive(serde::Deserialize)]
 pub struct AssetBalanceReq {
     /// `assetId` is the pre-unification spelling, accepted for compatibility.
     #[serde(alias = "assetId")]
@@ -164,6 +159,12 @@ pub struct PsbtRes {
 pub struct CreateUtxosRes {
     /// How many UTXOs the finalized transaction created.
     pub created: usize,
+}
+
+#[derive(serde::Serialize)]
+pub struct SendBtcRes {
+    /// TXID of the broadcast transaction.
+    pub txid: String,
 }
 
 #[derive(serde::Serialize)]
@@ -247,14 +248,11 @@ pub async fn list_assets(
 pub async fn list_transfers(
     ctx: Data<WalletCtx>,
     wallet_key: XWalletKey,
-    req: Json<AssetId>,
+    req: Json<ListTransfersReq>,
 ) -> Result<Json<Vec<rgb_lib::wallet::Transfer>>, ApiError> {
     let ctx = derive_wctx(&ctx, wallet_key).await?;
 
-    let list = ctx
-        .transfers_by_asset(&req.asset_id)
-        .await
-        .map_err(map_rgb_error)?;
+    let list = ctx.transfers_by_asset(req.0).await.map_err(map_rgb_error)?;
     Ok(Json(list))
 }
 
@@ -418,8 +416,47 @@ pub async fn blind_receive(
     req: Json<ReceiveReq>,
 ) -> Result<Json<rgb_lib::wallet::ReceiveData>, ApiError> {
     let ctx = derive_wctx(&ctx, wallet_key).await?;
-    let res = ctx.receive_token(req.0).await.map_err(map_rgb_error)?;
+    let res = ctx
+        .receive_token(ReceiveKind::Blind, req.0)
+        .await
+        .map_err(map_rgb_error)?;
     Ok(Json(res))
+}
+
+pub async fn witness_receive(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+    req: Json<ReceiveReq>,
+) -> Result<Json<rgb_lib::wallet::ReceiveData>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    let res = ctx
+        .receive_token(ReceiveKind::Witness, req.0)
+        .await
+        .map_err(map_rgb_error)?;
+    Ok(Json(res))
+}
+
+pub async fn send_btc_begin(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+    req: Json<SendBtcReq>,
+) -> Result<Json<PsbtRes>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    let psbt = ctx.send_btc_begin(req.0).await.map_err(map_rgb_error)?;
+    Ok(Json(PsbtRes { psbt }))
+}
+
+pub async fn send_btc_end(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+    req: Json<Psbt>,
+) -> Result<Json<SendBtcRes>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    let txid = ctx
+        .send_btc_end(req.0.signed_psbt)
+        .await
+        .map_err(map_rgb_error)?;
+    Ok(Json(SendBtcRes { txid }))
 }
 
 pub async fn refresh(
@@ -471,6 +508,10 @@ mod tests {
             })
             .unwrap(),
             serde_json::to_string(&CreateUtxosRes { created: 3 }).unwrap(),
+            serde_json::to_string(&SendBtcRes {
+                txid: "f00d".to_string(),
+            })
+            .unwrap(),
             serde_json::to_string(&FailTransferRes { changed: true }).unwrap(),
             serde_json::to_string(&AddressRes {
                 address: "bcrt1qxy".to_string(),
@@ -484,6 +525,7 @@ mod tests {
             [
                 r#"{"psbt":"cHNidP8B"}"#,
                 r#"{"created":3}"#,
+                r#"{"txid":"f00d"}"#,
                 r#"{"changed":true}"#,
                 r#"{"address":"bcrt1qxy"}"#,
                 r#"{}"#,

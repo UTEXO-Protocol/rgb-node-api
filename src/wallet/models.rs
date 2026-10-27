@@ -56,6 +56,39 @@ fn default_duration_seconds() -> Option<u32> {
     Some(3600)
 }
 
+/// Which kind of RGB invoice a receive creates.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReceiveKind {
+    /// The sender assigns to a blinded UTXO this wallet already holds.
+    Blind,
+    /// The sender's transaction creates a new output paying this wallet, so
+    /// no colorable UTXO is needed up front.
+    Witness,
+}
+
+/// `ListTransfersRequestModel` in the API spec.
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct ListTransfersReq {
+    /// The asset whose transfers to list; `null` lists the transfers not yet
+    /// tied to any asset (receives created without one). The field itself is
+    /// required, so a client that forgets it gets an error rather than the
+    /// asset-less list.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub asset_id: Option<String>,
+}
+
+impl ListTransfersReq {
+    pub fn asset_filter(&self) -> rgb_lib::wallet::AssetFilter {
+        match &self.asset_id {
+            Some(id) => rgb_lib::wallet::AssetFilter::Id(id.clone()),
+            // Not `AnyOrNone`: callers merge this with per-asset listings, and
+            // a transfer must not come back twice.
+            None => rgb_lib::wallet::AssetFilter::None,
+        }
+    }
+}
+
+/// `SendBtcBeginRequestModel` in the API spec.
 #[derive(Clone, serde::Deserialize, serde::Serialize)]
 pub struct SendBtcReq {
     pub address: String,
@@ -272,6 +305,57 @@ mod burn_tests {
                 req(bad).validate_txid(),
                 Err(rgb_lib::Error::InvalidTxid)
             ));
+        }
+    }
+}
+
+#[cfg(test)]
+mod request_tests {
+    use super::*;
+    use rgb_lib::wallet::AssetFilter;
+
+    fn list_transfers(body: serde_json::Value) -> Result<ListTransfersReq, serde_json::Error> {
+        serde_json::from_value(body)
+    }
+
+    #[test]
+    fn list_transfers_by_asset_matches_only_that_asset() {
+        let req = list_transfers(serde_json::json!({ "asset_id": "rgb:x" })).unwrap();
+        assert_eq!(req.asset_filter(), AssetFilter::Id("rgb:x".into()));
+    }
+
+    #[test]
+    fn list_transfers_with_a_null_asset_matches_asset_less_transfers_only() {
+        // Not AnyOrNone: callers merge this with the per-asset listings.
+        let req = list_transfers(serde_json::json!({ "asset_id": null })).unwrap();
+        assert_eq!(req.asset_filter(), AssetFilter::None);
+    }
+
+    #[test]
+    fn list_transfers_still_requires_the_asset_id_field() {
+        assert!(list_transfers(serde_json::json!({})).is_err());
+    }
+
+    #[test]
+    fn send_btc_requires_address_amount_and_fee_rate() {
+        let req: SendBtcReq = serde_json::from_value(serde_json::json!({
+            "address": "bcrt1qxy",
+            "amount": 1000,
+            "fee_rate": 2,
+        }))
+        .unwrap();
+        assert_eq!(
+            (req.address.as_str(), req.amount, req.fee_rate),
+            ("bcrt1qxy", 1000, 2)
+        );
+        for missing in ["address", "amount", "fee_rate"] {
+            let mut body =
+                serde_json::json!({ "address": "bcrt1qxy", "amount": 1000, "fee_rate": 2 });
+            body.as_object_mut().unwrap().remove(missing);
+            assert!(
+                serde_json::from_value::<SendBtcReq>(body).is_err(),
+                "{missing}"
+            );
         }
     }
 }

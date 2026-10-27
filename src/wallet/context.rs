@@ -134,13 +134,10 @@ impl WalletCtx {
 
     pub async fn transfers_by_asset(
         &self,
-        asset_id: &str,
+        req: ListTransfersReq,
     ) -> Result<Vec<rgb_lib::wallet::Transfer>, rgb_lib::Error> {
         let (resp, recv) = oneshot::channel();
-        let cmd = WalletCmd::TransfersByAsset {
-            asset_id: asset_id.to_owned(),
-            resp,
-        };
+        let cmd = WalletCmd::TransfersByAsset { req, resp };
         self.send_cmd(cmd, recv).await
     }
 
@@ -196,10 +193,12 @@ impl WalletCtx {
 
     pub async fn receive_token(
         &self,
+        kind: ReceiveKind,
         req: ReceiveReq,
     ) -> Result<rgb_lib::wallet::ReceiveData, rgb_lib::Error> {
         let (resp, recv) = oneshot::channel();
         let cmd = WalletCmd::Receive {
+            kind,
             req: req.to_owned(),
             resp,
         };
