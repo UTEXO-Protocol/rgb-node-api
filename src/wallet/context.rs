@@ -196,10 +196,12 @@ impl WalletCtx {
 
     pub async fn receive_token(
         &self,
+        kind: ReceiveKind,
         req: ReceiveReq,
     ) -> Result<rgb_lib::wallet::ReceiveData, rgb_lib::Error> {
         let (resp, recv) = oneshot::channel();
         let cmd = WalletCmd::Receive {
+            kind,
             req: req.to_owned(),
             resp,
         };

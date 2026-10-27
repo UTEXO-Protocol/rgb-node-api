@@ -15,6 +15,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `/wallet/sendbtcbegin` and `/wallet/sendbtcend` send BTC from the wallet's
+  vanilla side with a PSBT signed by the client; the end call returns the
+  broadcast `txid`.
+- `/wallet/witnessreceive` creates an RGB invoice paid to a new output of the
+  sender's transaction, so the wallet needs no colorable UTXO up front. It
+  takes the same body as `/wallet/blindreceive`.
 - Opt-in BFA support: set `bfa_enabled = true` and `eth_rpc_url` in `[wallet]`.
   Wallets then accept the BFA schema and validate BFA consignments against the
   EVM RPC. BFA stays disabled without the opt-in.

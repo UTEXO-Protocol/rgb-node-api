@@ -56,6 +56,17 @@ fn default_duration_seconds() -> Option<u32> {
     Some(3600)
 }
 
+/// Which kind of RGB invoice a receive creates.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReceiveKind {
+    /// The sender assigns to a blinded UTXO this wallet already holds.
+    Blind,
+    /// The sender's transaction creates a new output paying this wallet, so
+    /// no colorable UTXO is needed up front.
+    Witness,
+}
+
+/// `SendBtcBeginRequestModel` in the API spec.
 #[derive(Clone, serde::Deserialize, serde::Serialize)]
 pub struct SendBtcReq {
     pub address: String,
@@ -272,6 +283,34 @@ mod burn_tests {
                 req(bad).validate_txid(),
                 Err(rgb_lib::Error::InvalidTxid)
             ));
+        }
+    }
+}
+
+#[cfg(test)]
+mod request_tests {
+    use super::*;
+
+    #[test]
+    fn send_btc_requires_address_amount_and_fee_rate() {
+        let req: SendBtcReq = serde_json::from_value(serde_json::json!({
+            "address": "bcrt1qxy",
+            "amount": 1000,
+            "fee_rate": 2,
+        }))
+        .unwrap();
+        assert_eq!(
+            (req.address.as_str(), req.amount, req.fee_rate),
+            ("bcrt1qxy", 1000, 2)
+        );
+        for missing in ["address", "amount", "fee_rate"] {
+            let mut body =
+                serde_json::json!({ "address": "bcrt1qxy", "amount": 1000, "fee_rate": 2 });
+            body.as_object_mut().unwrap().remove(missing);
+            assert!(
+                serde_json::from_value::<SendBtcReq>(body).is_err(),
+                "{missing}"
+            );
         }
     }
 }

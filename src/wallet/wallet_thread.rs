@@ -73,6 +73,7 @@ pub(crate) enum WalletCmd {
         resp: ResultChan<wallet::Balance>,
     },
     Receive {
+        kind: ReceiveKind,
         req: ReceiveReq,
         resp: ResultChan<wallet::ReceiveData>,
     },
@@ -500,14 +501,15 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                 }
             }
         }
-        WalletCmd::Receive { req, resp } => {
+        WalletCmd::Receive { kind, req, resp } => {
             // A missing amount and an explicit 0 both mean "no amount
             // restriction": an invoice demanding exactly 0 units is useless.
             let assignment = match req.amount {
                 Some(amount) if amount > 0 => rgb_lib::Assignment::Fungible(amount),
                 _ => rgb_lib::Assignment::Any,
             };
-            match wallet_state.lock().unwrap().blind_receive_token(
+            match wallet_state.lock().unwrap().receive_token(
+                kind,
                 req.asset_id,
                 assignment,
                 req.duration_seconds,
@@ -515,7 +517,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
             ) {
                 Ok(val) => resp.send(Ok(val)).is_ok(),
                 Err(err) => {
-                    log_rgb_err!(err, "blind recieve: wid={id} error={:?}", err);
+                    log_rgb_err!(err, "receive: wid={id} kind={kind:?} error={:?}", err);
                     resp.send(Err(err)).is_ok()
                 }
             }

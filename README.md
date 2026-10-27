@@ -70,13 +70,16 @@ The begin/end pattern allows clients to sign PSBTs externally:
 | POST | `/listunspents` | List unspent outputs |
 | POST | `/listtransactions` | List BTC transactions |
 | POST | `/listtransfers` | List RGB transfers for an asset |
-| POST | `/blindreceive` | Generate RGB invoice |
+| POST | `/blindreceive` | Generate RGB invoice (blinded UTXO) |
+| POST | `/witnessreceive` | Generate RGB invoice paid to a new output of the sender's transaction |
 | POST | `/issueassetnia` | Issue new NIA token |
 | POST | `/issueassetifa` | Issue IFA tokens and reserve inflation rights |
 | POST | `/inflatebegin` | Create additional IFA tokens (unsigned PSBT) |
 | POST | `/inflateend` | Finalize IFA inflation (signed PSBT) |
 | POST | `/createutxosbegin` | Create UTXOs (unsigned PSBT) |
 | POST | `/createutxosend` | Finalize UTXO creation (signed PSBT) |
+| POST | `/sendbtcbegin` | Send BTC (unsigned PSBT) |
+| POST | `/sendbtcend` | Finalize BTC send (signed PSBT) |
 | POST | `/sendbegin` | Send RGB token (unsigned PSBT) |
 | POST | `/sendend` | Finalize token send (signed PSBT) |
 | POST | `/burnbegin` | Burn BFA or IFA tokens (unsigned PSBT) |
