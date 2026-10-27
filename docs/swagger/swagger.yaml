@@ -2253,12 +2253,15 @@ components:
             Amount to request, in the asset's smallest unit. Omit it, or send
             `0`, to accept any amount.
         duration_seconds:
-          type: integer
+          anyOf:
+            - type: integer
+            - type: 'null'
           title: Duration Seconds
           description: >-
             How long the invoice stays valid, in seconds from now. Invoices
-            always expire: `null` uses the default.
-          default: 3600
+            always expire: omitted or `null` uses the two-hour default. BFA mint
+            must begin with at least one hour remaining on the invoice.
+          default: 7200
       type: object
       title: RgbInvoiceRequestModel
       description: Request model for RGB invoices.
@@ -2319,10 +2322,11 @@ components:
             - type: 'null'
           title: Expiration Timestamp
           description: >-
-            Absolute Unix deadline of the transfer. At least 5 minutes ahead
-            and, for proxy recipients, at least 10 minutes before the earliest
-            invoice expiration. Defaults to the earliest recipient invoice
-            expiration minus 10 minutes.
+            Absolute Unix deadline of the transfer. At least 5 minutes ahead.
+            Non-donation proxy transfers must also expire at least 10 minutes
+            before the earliest invoice expiration. Defaults to the earliest
+            recipient invoice expiration, minus 10 minutes only when donation
+            is false.
       type: object
       required:
         - recipient_map

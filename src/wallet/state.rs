@@ -98,7 +98,7 @@ impl RgbWalletState {
         kind: ReceiveKind,
         asset_id: Option<String>,
         assigment: rgb_lib::Assignment,
-        duration_seconds: Option<u32>,
+        duration_seconds: u32,
         min_confirmations: u8,
     ) -> Result<ReceiveData, rgb_lib::Error> {
         let transport_endpoints = self.proxy_host.iter().cloned().collect();
@@ -106,10 +106,8 @@ impl RgbWalletState {
         // The API takes a duration, rgb-lib wants an absolute unix timestamp:
         // passing the duration through unchanged lands in 1970 and rgb-lib
         // rejects it with InvalidExpiration.
-        // The pinned library requires an expiry. Omitted/null durations use the
-        // HTTP API's existing one-hour default; they do not mean unbounded.
-        let expiration_timestamp =
-            unix_now().saturating_add(u64::from(duration_seconds.unwrap_or(3600)));
+        // ReceiveReq has already resolved omitted/null durations to the default.
+        let expiration_timestamp = unix_now().saturating_add(u64::from(duration_seconds));
 
         // Online is needed to reserve the recipient ID on the proxies.
         // No encryption preference: rgb-lib applies its default.

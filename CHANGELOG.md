@@ -18,9 +18,9 @@ All notable changes to this project are documented here. The format follows
   `encryption` (default `Required`, as for an invoice without `enc`) and
   `expiration_timestamp`; rgb-lib needs the key and the expiration for proxy
   recipients. The transfer's `expiration_timestamp` is optional and defaults
-  to the earliest invoice expiration minus 10 minutes; an explicit one must be
-  at least 5 minutes ahead and, for proxy recipients, at least 10 minutes
-  before the earliest invoice expiration.
+  to the earliest invoice expiration, minus 10 minutes only for non-donations.
+  An explicit one must be at least 5 minutes ahead and, for non-donation proxy
+  transfers, at least 10 minutes before the earliest invoice expiration.
 - Responses follow the new rgb-lib models: BFA uses mint rights
   (`MintRight` allocations, `Mint` transfers, `mint` in assignment totals)
   instead of bridge and link rights; transfers gain
@@ -28,8 +28,10 @@ All notable changes to this project are documented here. The format follows
   `public_key`; IFA link fields are gone.
 - `/wallet/burnbegin` passes `burn_recipient` to rgb-lib as the burn reason
   (also accepted as `burn_reason`): 32 bytes, hex, optional `0x`.
-- `/wallet/receive` invoices always expire: `duration_seconds: null` now means
-  the default one hour instead of "never expires".
+- `/wallet/blindreceive` invoices always expire: omitted or null
+  `duration_seconds` uses a two-hour default. This leaves time to start a BFA
+  mint, which requires at least one hour remaining on the invoice. Explicit
+  durations are preserved.
 
 ### Added
 
@@ -39,7 +41,8 @@ All notable changes to this project are documented here. The format follows
 - `/wallet/witnessreceive` creates an RGB invoice paid to a new output of the
   sender's transaction, so the wallet needs no colorable UTXO up front. It
   takes the same body as `/wallet/blindreceive`.
-- Opt-in BFA support: set `bfa_enabled = true` and `eth_rpc_url` in `[wallet]`.
+- Opt-in BFA support: set `bfa_enabled = true`, `eth_rpc_url` and `eth_chain_id`
+  in `[wallet]`.
   Wallets then accept the BFA schema and validate BFA consignments against the
   EVM RPC. BFA stays disabled without the opt-in.
 - IFA support on every network except mainnet, where rgb-lib does not allow
@@ -48,7 +51,8 @@ All notable changes to this project are documented here. The format follows
 - `/wallet/inflatebegin` and `/wallet/inflateend` create additional IFA tokens
   using the wallet's inflation rights and a PSBT signed by the client.
 - `/wallet/burnbegin` and `/wallet/burnend` support burning BFA and IFA assets.
-  BFA burns require a 32-byte `burn_recipient`, encoded as hex.
+  An optional 32-byte hex burn reason is accepted as `burn_recipient` or
+  `burn_reason`.
 - `/wallet/getconsignment` returns the hex consignment of a send or burn by
   `asset_id` and `txid`.
 

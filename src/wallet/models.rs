@@ -52,8 +52,20 @@ pub struct ReceiveReq {
     pub min_confirmations: u8,
 }
 
+// BFA mint_begin needs at least one hour left on the invoice. Leave another
+// hour for the caller to start the mint after creating the invoice.
+const DEFAULT_RECEIVE_DURATION_SECS: u32 = 7200;
+
 fn default_duration_seconds() -> Option<u32> {
-    Some(3600)
+    Some(DEFAULT_RECEIVE_DURATION_SECS)
+}
+
+impl ReceiveReq {
+    /// Omitted and null durations both use the default; explicit values win.
+    pub fn duration_seconds(&self) -> u32 {
+        self.duration_seconds
+            .unwrap_or(DEFAULT_RECEIVE_DURATION_SECS)
+    }
 }
 
 /// Which kind of RGB invoice a receive creates.
@@ -186,9 +198,10 @@ pub struct SendBeginReq {
     #[serde(default = "default_min_confirmations")]
     pub min_confirmations: u8,
     /// Absolute Unix deadline of the transfer. rgb-lib requires it to be at
-    /// least 5 minutes ahead and, for proxy recipients, at least 10 minutes
-    /// before the earliest invoice expiration. When omitted, it is derived
-    /// from the recipients' invoice expirations.
+    /// least 5 minutes ahead and, for non-donation proxy transfers, at least
+    /// 10 minutes before the earliest invoice expiration. When omitted, it
+    /// defaults to the earliest invoice expiration, minus that margin only
+    /// for non-donations.
     #[serde(default)]
     pub expiration_timestamp: Option<u64>,
 }
@@ -198,7 +211,8 @@ const INVOICE_EXPIRATION_MARGIN_SECS: u64 = 600;
 
 impl SendBeginReq {
     /// The transfer deadline: the requested one, or the earliest recipient
-    /// invoice expiration minus rgb-lib's margin. Range checks beyond "in the
+    /// invoice expiration minus rgb-lib's margin for non-donations. Donations
+    /// do not wait for ACKs and need no margin. Range checks beyond "in the
     /// future" are left to rgb-lib, which knows the exact rules.
     pub fn expiration(&self) -> Result<u64, rgb_lib::Error> {
         let expiration = match self.expiration_timestamp {
@@ -210,7 +224,11 @@ impl SendBeginReq {
                 .filter_map(|r| r.expiration_timestamp)
                 .min()
                 .ok_or(rgb_lib::Error::InvalidExpiration)?
-                .saturating_sub(INVOICE_EXPIRATION_MARGIN_SECS),
+                .saturating_sub(if self.donation {
+                    0
+                } else {
+                    INVOICE_EXPIRATION_MARGIN_SECS
+                }),
         };
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -273,8 +291,29 @@ pub struct GetConsignmentRes {
 }
 
 #[cfg(test)]
-mod burn_tests {
+mod tests {
     use super::*;
+
+    #[test]
+    fn receive_omitted_and_null_durations_leave_time_to_start_a_mint() {
+        for body in [
+            serde_json::json!({}),
+            serde_json::json!({"duration_seconds": null}),
+        ] {
+            let req: ReceiveReq = serde_json::from_value(body).unwrap();
+            assert_eq!(req.duration_seconds(), 7200);
+            // The new library needs a full hour remaining at mint_begin,
+            // including when it starts after the invoice was returned.
+            assert!(req.duration_seconds() - 2 >= 3600);
+        }
+        for duration in [0, 540, 3600, 10800] {
+            let req: ReceiveReq = serde_json::from_value(serde_json::json!({
+                "duration_seconds": duration,
+            }))
+            .unwrap();
+            assert_eq!(req.duration_seconds(), duration);
+        }
+    }
 
     fn burn_req(recipient: Option<&str>) -> BurnBeginReq {
         serde_json::from_value(serde_json::json!({
@@ -359,6 +398,40 @@ mod burn_tests {
         }))
         .unwrap();
         assert_eq!(r.encryption, rgb_lib::Encryption::Required);
+    }
+
+    #[test]
+    fn donation_expiration_does_not_reserve_time_for_acks() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let mut req: SendBeginReq = serde_json::from_value(serde_json::json!({
+            "donation": true,
+            "recipient_map": {"rgb:x": [
+                {"recipient_id": "later", "amount": 1,
+                 "transport_endpoints": ["rpc://proxy/json-rpc"],
+                 "expiration_timestamp": now + 1200},
+                {"recipient_id": "earlier", "amount": 1,
+                 "transport_endpoints": ["rpc://proxy/json-rpc"],
+                 "expiration_timestamp": now + 540},
+            ]},
+        }))
+        .unwrap();
+        assert_eq!(req.expiration().unwrap(), now + 540);
+        req.expiration_timestamp = Some(now + 420);
+        assert_eq!(req.expiration().unwrap(), now + 420);
+        req.expiration_timestamp = Some(now);
+        assert!(matches!(
+            req.expiration(),
+            Err(rgb_lib::Error::InvalidExpiration)
+        ));
+        req.expiration_timestamp = None;
+        req.donation = false;
+        assert!(matches!(
+            req.expiration(),
+            Err(rgb_lib::Error::InvalidExpiration)
+        ));
     }
 
     #[test]

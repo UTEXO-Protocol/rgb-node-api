@@ -502,6 +502,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
             }
         }
         WalletCmd::Receive { kind, req, resp } => {
+            let duration_seconds = req.duration_seconds();
             // A missing amount and an explicit 0 both mean "no amount
             // restriction": an invoice demanding exactly 0 units is useless.
             let assignment = match req.amount {
@@ -512,7 +513,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                 kind,
                 req.asset_id,
                 assignment,
-                req.duration_seconds,
+                duration_seconds,
                 req.min_confirmations,
             ) {
                 Ok(val) => resp.send(Ok(val)).is_ok(),
