@@ -48,7 +48,7 @@ pub(crate) enum WalletCmd {
         resp: ResultChan<bool>,
     },
     TransfersByAsset {
-        req: ListTransfersReq,
+        asset_id: String,
         resp: ResultChan<Vec<wallet::Transfer>>,
     },
     TransfersByRecipient {
@@ -389,19 +389,18 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                 }
             }
         }
-        WalletCmd::TransfersByAsset { req, resp } => {
+        WalletCmd::TransfersByAsset { asset_id, resp } => {
             match wallet_state
                 .lock()
                 .unwrap()
                 .wallet
-                .list_transfers(req.asset_filter(), None)
+                .list_transfers(wallet::AssetFilter::Id(asset_id.clone()), None)
             {
                 Ok(val) => resp.send(Ok(val)).is_ok(),
                 Err(err) => {
                     log_rgb_err!(
                         err,
-                        "list transfers by asset: wid={id} asset={:?} error={:?}",
-                        req.asset_id,
+                        "list transfers by asset: wid={id} asset={asset_id} error={:?}",
                         err
                     );
                     resp.send(Err(err)).is_ok()

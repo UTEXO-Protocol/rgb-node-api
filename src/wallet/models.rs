@@ -66,28 +66,6 @@ pub enum ReceiveKind {
     Witness,
 }
 
-/// `ListTransfersRequestModel` in the API spec.
-#[derive(Clone, Debug, serde::Deserialize)]
-pub struct ListTransfersReq {
-    /// The asset whose transfers to list; `null` lists the transfers not yet
-    /// tied to any asset (receives created without one). The field itself is
-    /// required, so a client that forgets it gets an error rather than the
-    /// asset-less list.
-    #[serde(deserialize_with = "Option::deserialize")]
-    pub asset_id: Option<String>,
-}
-
-impl ListTransfersReq {
-    pub fn asset_filter(&self) -> rgb_lib::wallet::AssetFilter {
-        match &self.asset_id {
-            Some(id) => rgb_lib::wallet::AssetFilter::Id(id.clone()),
-            // Not `AnyOrNone`: callers merge this with per-asset listings, and
-            // a transfer must not come back twice.
-            None => rgb_lib::wallet::AssetFilter::None,
-        }
-    }
-}
-
 /// `SendBtcBeginRequestModel` in the API spec.
 #[derive(Clone, serde::Deserialize, serde::Serialize)]
 pub struct SendBtcReq {
@@ -312,29 +290,6 @@ mod burn_tests {
 #[cfg(test)]
 mod request_tests {
     use super::*;
-    use rgb_lib::wallet::AssetFilter;
-
-    fn list_transfers(body: serde_json::Value) -> Result<ListTransfersReq, serde_json::Error> {
-        serde_json::from_value(body)
-    }
-
-    #[test]
-    fn list_transfers_by_asset_matches_only_that_asset() {
-        let req = list_transfers(serde_json::json!({ "asset_id": "rgb:x" })).unwrap();
-        assert_eq!(req.asset_filter(), AssetFilter::Id("rgb:x".into()));
-    }
-
-    #[test]
-    fn list_transfers_with_a_null_asset_matches_asset_less_transfers_only() {
-        // Not AnyOrNone: callers merge this with the per-asset listings.
-        let req = list_transfers(serde_json::json!({ "asset_id": null })).unwrap();
-        assert_eq!(req.asset_filter(), AssetFilter::None);
-    }
-
-    #[test]
-    fn list_transfers_still_requires_the_asset_id_field() {
-        assert!(list_transfers(serde_json::json!({})).is_err());
-    }
 
     #[test]
     fn send_btc_requires_address_amount_and_fee_rate() {

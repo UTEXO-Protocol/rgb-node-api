@@ -69,7 +69,7 @@ The begin/end pattern allows clients to sign PSBTs externally:
 | POST | `/assetbalance` | Get balance for an asset |
 | POST | `/listunspents` | List unspent outputs |
 | POST | `/listtransactions` | List BTC transactions |
-| POST | `/listtransfers` | List RGB transfers for an asset (`asset_id: null`: transfers not yet tied to one) |
+| POST | `/listtransfers` | List RGB transfers for an asset |
 | POST | `/blindreceive` | Generate RGB invoice (blinded UTXO) |
 | POST | `/witnessreceive` | Generate RGB invoice paid to a new output of the sender's transaction |
 | POST | `/issueassetnia` | Issue new NIA token |

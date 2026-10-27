@@ -36,9 +36,6 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
-- `/wallet/listtransfers` accepts `asset_id: null` to list the transfers not
-  yet tied to any asset (receives created without one). The field is still
-  required.
 - Responses follow the pinned rgb-lib models: `listassets` has a `bfa` group,
   transfers can be `WaitingBroadcast`, allocations can be `BridgeRight` and
   UTXOs carry `derivation_index`.

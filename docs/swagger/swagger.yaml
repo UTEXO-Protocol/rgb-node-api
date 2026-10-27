@@ -2082,14 +2082,8 @@ components:
     ListTransfersRequestModel:
       properties:
         asset_id:
-          anyOf:
-            - type: string
-            - type: 'null'
+          type: string
           title: Asset Id
-          description: >-
-            The asset whose transfers to list. `null` lists the transfers not yet
-            tied to any asset (receives created without one). The field is
-            required either way.
       type: object
       required:
         - asset_id

@@ -114,6 +114,11 @@ pub struct RegisterRes {
 }
 
 #[derive(serde::Deserialize)]
+pub struct AssetId {
+    pub asset_id: String,
+}
+
+#[derive(serde::Deserialize)]
 pub struct AssetBalanceReq {
     /// `assetId` is the pre-unification spelling, accepted for compatibility.
     #[serde(alias = "assetId")]
@@ -248,11 +253,14 @@ pub async fn list_assets(
 pub async fn list_transfers(
     ctx: Data<WalletCtx>,
     wallet_key: XWalletKey,
-    req: Json<ListTransfersReq>,
+    req: Json<AssetId>,
 ) -> Result<Json<Vec<rgb_lib::wallet::Transfer>>, ApiError> {
     let ctx = derive_wctx(&ctx, wallet_key).await?;
 
-    let list = ctx.transfers_by_asset(req.0).await.map_err(map_rgb_error)?;
+    let list = ctx
+        .transfers_by_asset(&req.asset_id)
+        .await
+        .map_err(map_rgb_error)?;
     Ok(Json(list))
 }
 
