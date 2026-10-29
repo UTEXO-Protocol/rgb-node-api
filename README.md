@@ -31,9 +31,11 @@ btc_rpc_user = "dev"
 btc_rpc_password = "dev"
 indexer_address = "tcp://127.0.0.1:50001"
 proxy_address = ["rpc://127.0.0.1:3000/json-rpc"]
-# Optional BFA support; validation of BFA consignments reads the EVM RPC.
+# Optional BFA support (not on mainnet); BFA mints are checked on the EVM RPC,
+# which must be on `eth_chain_id` and serve the logs of the whole chain.
 # bfa_enabled = true
 # eth_rpc_url = "http://127.0.0.1:8545"
+# eth_chain_id = 11155111
 ```
 
 Wallets are not configured in the file — they are registered at runtime via

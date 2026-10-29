@@ -35,7 +35,7 @@ services:
   # Official RGB proxy — the image rgb-lib's own test suite runs against, so it
   # is guaranteed to speak the proxy protocol version rgb-lib requires.
   rgb_proxy:
-    image: ghcr.io/rgb-tools/rgb-proxy-server:0.3.0
+    image: ghcr.io/rgb-tools/rgb-proxy-server:0.4.0
     ports:
       - "127.0.0.1:3000:3000"
     restart: always

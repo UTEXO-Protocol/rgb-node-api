@@ -502,6 +502,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
             }
         }
         WalletCmd::Receive { kind, req, resp } => {
+            let duration_seconds = req.duration_seconds();
             // A missing amount and an explicit 0 both mean "no amount
             // restriction": an invoice demanding exactly 0 units is useless.
             let assignment = match req.amount {
@@ -512,7 +513,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                 kind,
                 req.asset_id,
                 assignment,
-                req.duration_seconds,
+                duration_seconds,
                 req.min_confirmations,
             ) {
                 Ok(val) => resp.send(Ok(val)).is_ok(),
@@ -553,6 +554,14 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
             }
         }
         WalletCmd::SendBegin { req, resp } => {
+            let expiration_timestamp = match req.expiration() {
+                Ok(expiration) => expiration,
+                Err(err) => {
+                    log_rgb_err!(err, "send begin: wid={id} error={:?}", err);
+                    let _ = resp.send(Err(err));
+                    return;
+                }
+            };
             let recipient_map: std::collections::HashMap<String, Vec<wallet::Recipient>> = req
                 .recipient_map
                 .into_iter()
@@ -562,15 +571,16 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                 .collect();
             let mut w = wallet_state.lock().unwrap();
             let wo = w.wallet_online;
+            let sender_proxy = w.sender_proxy.clone();
             match w.wallet.send_begin(
                 wo,
                 recipient_map,
                 req.donation,
                 req.fee_rate,
                 req.min_confirmations,
-                req.expiration_timestamp,
+                expiration_timestamp,
+                sender_proxy,
                 false,
-                None,
             ) {
                 Ok(val) => resp.send(Ok(val.psbt)).is_ok(),
                 Err(err) => {
@@ -591,20 +601,18 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
             }
         }
         WalletCmd::BurnBegin { req, resp } => {
-            let res = req.burn_recipient_bytes().and_then(|burn_recipient| {
-                let mut w = wallet_state.lock().unwrap();
-                let wo = w.wallet_online;
-                w.wallet.burn_begin(
-                    wo,
-                    req.asset_id,
-                    req.amount,
-                    burn_recipient,
-                    req.fee_rate,
-                    req.min_confirmations,
-                    false,
-                )
-            });
-            match res {
+            let burn_reason = req.burn_reason();
+            let mut w = wallet_state.lock().unwrap();
+            let wo = w.wallet_online;
+            match w.wallet.burn_begin(
+                wo,
+                req.asset_id,
+                req.amount,
+                burn_reason,
+                req.fee_rate,
+                req.min_confirmations,
+                false,
+            ) {
                 Ok(val) => resp.send(Ok(val.psbt)).is_ok(),
                 Err(err) => {
                     log_rgb_err!(err, "burn begin: wid={id} error={:?}", err);
@@ -653,15 +661,10 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
         WalletCmd::SendBtcBegin { req, resp } => {
             let mut w = wallet_state.lock().unwrap();
             let wo = w.wallet_online;
-            match w.wallet.send_btc_begin(
-                wo,
-                req.address,
-                req.amount,
-                req.fee_rate,
-                false,
-                false,
-                None,
-            ) {
+            match w
+                .wallet
+                .send_btc_begin(wo, req.address, req.amount, req.fee_rate, false, false)
+            {
                 Ok(val) => resp.send(Ok(val)).is_ok(),
                 Err(err) => {
                     log_rgb_err!(err, "send btc begin: wid={id} error={:?}", err);
@@ -702,7 +705,6 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                 req.amounts,
                 req.inflation_amounts,
                 req.reject_list_url,
-                None,
             );
             if let Err(err) = &res {
                 log_rgb_err!(err, "issue IFA: wid={id} error={:?}", err);

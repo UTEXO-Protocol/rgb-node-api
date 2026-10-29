@@ -1,8 +1,9 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use rgb_lib::wallet::{
-    Balance, BtcBalance, DatabaseType, Online, OnlineOptions, ReceiveData, RgbWalletOpsOffline,
-    RgbWalletOpsOnline, SinglesigKeys, Wallet, WalletData,
+    Balance, BtcBalance, DatabaseType, IndexerConfig, IndexerProtocol, Online, OnlineOptions,
+    ReceiveData, RgbWalletOpsOffline, RgbWalletOpsOnline, SinglesigKeys, Wallet, WalletData,
+    check_indexer_url,
 };
 
 use super::Config;
@@ -15,13 +16,30 @@ fn unix_now() -> u64 {
         .unwrap_or_default()
 }
 
+/// rgb-lib no longer guesses the indexer protocol from the URL when going
+/// online, so probe it here (electrum first, then esplora, as before).
+fn indexer_config(config: &Config) -> Result<IndexerConfig, rgb_lib::Error> {
+    let url = config.indexer_address.clone();
+    Ok(match check_indexer_url(&url, None, config.net())? {
+        IndexerProtocol::Electrum => IndexerConfig::Electrum { url },
+        IndexerProtocol::Esplora => IndexerConfig::Esplora { url },
+        IndexerProtocol::Bitcoind => {
+            return Err(rgb_lib::Error::InvalidIndexer {
+                details: "bitcoind indexers are not supported".into(),
+            });
+        }
+    })
+}
+
 pub struct RgbWalletState {
     pub id: String,
     pub master_xpub: String,
-    pub wallet: rgb_lib::Wallet,
+    pub wallet: Wallet,
     pub wallet_online: Online,
 
     proxy_host: BTreeSet<String>,
+    /// Our own proxy, where recipients post their ACK when we send.
+    pub sender_proxy: Option<String>,
 }
 
 impl RgbWalletState {
@@ -43,7 +61,6 @@ impl RgbWalletState {
                 database_type: DatabaseType::Sqlite,
                 max_allocations_per_utxo: max_allocations_per_utxo.unwrap_or(5),
                 supported_schemas: config.supported_schemas()?,
-                reuse_addresses: false,
             },
             SinglesigKeys {
                 account_xpub_colored: xpub_colored,
@@ -56,10 +73,14 @@ impl RgbWalletState {
         )?;
 
         let online = wallet.go_online(OnlineOptions {
-            indexer_url: config.indexer_address.clone(),
+            indexer_config: indexer_config(config)?,
             skip_consistency_check: false,
             vanilla_sync_lookback: 20,
-            eth_rpc_url: config.eth_rpc(),
+            // Keep detecting late BTC payments to failed witness receives for a week.
+            failed_witness_receive_grace_secs: 604800,
+            // Our proxies run without proxy-level authentication.
+            proxy_auth_keys: HashMap::new(),
+            evm_rpc_urls: config.evm_rpc_urls(),
         })?;
 
         Ok(RgbWalletState {
@@ -67,6 +88,7 @@ impl RgbWalletState {
             wallet,
             wallet_online: online,
             proxy_host: config.proxy_address.iter().cloned().collect(),
+            sender_proxy: config.proxy_address.first().cloned(),
             master_xpub: Default::default(),
         })
     }
@@ -76,7 +98,7 @@ impl RgbWalletState {
         kind: ReceiveKind,
         asset_id: Option<String>,
         assigment: rgb_lib::Assignment,
-        duration_seconds: Option<u32>,
+        duration_seconds: u32,
         min_confirmations: u8,
     ) -> Result<ReceiveData, rgb_lib::Error> {
         let transport_endpoints = self.proxy_host.iter().cloned().collect();
@@ -84,25 +106,29 @@ impl RgbWalletState {
         // The API takes a duration, rgb-lib wants an absolute unix timestamp:
         // passing the duration through unchanged lands in 1970 and rgb-lib
         // rejects it with InvalidExpiration.
-        // The pinned library requires an expiry. Omitted/null durations use the
-        // HTTP API's existing one-hour default; they do not mean unbounded.
-        let expiration_timestamp =
-            unix_now().saturating_add(u64::from(duration_seconds.unwrap_or(3600)));
+        // ReceiveReq has already resolved omitted/null durations to the default.
+        let expiration_timestamp = unix_now().saturating_add(u64::from(duration_seconds));
 
+        // Online is needed to reserve the recipient ID on the proxies.
+        // No encryption preference: rgb-lib applies its default.
         let rd = match kind {
             ReceiveKind::Blind => self.wallet.blind_receive(
+                Some(self.wallet_online),
                 asset_id,
                 assigment,
                 expiration_timestamp,
                 transport_endpoints,
                 min_confirmations,
+                None,
             )?,
             ReceiveKind::Witness => self.wallet.witness_receive(
+                Some(self.wallet_online),
                 asset_id,
                 assigment,
                 expiration_timestamp,
                 transport_endpoints,
                 min_confirmations,
+                None,
             )?,
         };
 
