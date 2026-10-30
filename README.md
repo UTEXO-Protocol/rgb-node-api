@@ -16,6 +16,23 @@ cargo run -- -c config.toml
 
 A local regtest stack (bitcoind + electrs + rgb-proxy) is available via `just up`; then `just run` starts the service with `local.uwallet.toml`.
 
+### Building the Docker image
+
+The build downloads private `UTEXO-Protocol/rgb-lib-bfa` sources. Configure the
+GitHub Actions secret `ORG_REPO_READ_TOKEN` with Contents read access to that
+repository. CI passes it to Docker as a BuildKit secret; the default workflow
+token cannot read a different private repository.
+
+For a local build, export `ORG_REPO_READ_TOKEN` in your shell and run:
+
+```bash
+docker buildx build --load \
+  --secret id=github_token,env=ORG_REPO_READ_TOKEN \
+  -t rgb-node-api:local .
+```
+
+The token is available only during the Cargo build and is not stored in the image.
+
 ### Configuration
 
 ```toml
