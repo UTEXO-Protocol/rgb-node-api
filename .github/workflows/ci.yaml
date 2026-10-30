@@ -63,6 +63,8 @@ jobs:
         run: cargo check --all-targets
       - name: cargo test
         run: cargo test --all-targets
+      - name: Test Docker Git credentials
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'
 
   docker:
     name: build + push image
@@ -80,6 +82,15 @@ jobs:
         with:
           # Full history so build.rs resolves a real commit/branch, not a shallow sha.
           fetch-depth: 0
+
+      - name: Check private dependency token
+        env:
+          ORG_REPO_READ_TOKEN: ${{ secrets.ORG_REPO_READ_TOKEN }}
+        run: |
+          if [ -z "$ORG_REPO_READ_TOKEN" ]; then
+            echo "::error::Set ORG_REPO_READ_TOKEN with Contents read access to UTEXO-Protocol/rgb-lib-bfa."
+            exit 1
+          fi
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -110,6 +121,8 @@ jobs:
         with:
           context: .
           push: true
+          secrets: |
+            github_token=${{ secrets.ORG_REPO_READ_TOKEN }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
