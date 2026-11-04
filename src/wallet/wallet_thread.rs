@@ -705,7 +705,6 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                 req.amounts,
                 req.inflation_amounts,
                 req.reject_list_url,
-                // Contract linking is not exposed by this API.
                 false,
                 None,
             );

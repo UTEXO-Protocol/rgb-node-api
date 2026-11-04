@@ -52,7 +52,6 @@ pub struct ReceiveReq {
     pub min_confirmations: u8,
 }
 
-// Keep the established invoice lifetime for both receive endpoints.
 const DEFAULT_RECEIVE_DURATION_SECS: u32 = 7200;
 
 fn default_duration_seconds() -> Option<u32> {

@@ -2259,10 +2259,7 @@ components:
             - type: 'null'
           title: Duration Seconds
           description: >-
-            How long the invoice stays valid, in seconds from now. Invoices
-            always expire: omitted or `null` uses the two-hour default. For BFA
-            mints this bounds proxy retention; the lock deadline is an external
-            chain block chosen by the mint caller.
+            Invoice lifetime in seconds. Omitted or `null` defaults to 7200.
           default: 7200
       type: object
       title: RgbInvoiceRequestModel
