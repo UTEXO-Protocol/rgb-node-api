@@ -18,10 +18,12 @@ A local regtest stack (bitcoind + electrs + rgb-proxy) is available via `just up
 
 ### Building the Docker image
 
-The build downloads private `UTEXO-Protocol/rgb-lib-bfa` sources. Configure the
-GitHub Actions secret `ORG_REPO_READ_TOKEN` with Contents read access to that
-repository. CI passes it to Docker as a BuildKit secret; the default workflow
-token cannot read a different private repository.
+The build downloads private `UTEXO-Protocol/rgb-lib-bfa` sources and pinned
+`rgb-tools-devs` upstream repositories: `rgb-consensus`, `rgb-ops`, `rgb-api`
+and `rgb-schemas`. Configure the GitHub Actions secret `ORG_REPO_READ_TOKEN`
+with Contents read access to all five repositories. CI passes it to Docker
+as a BuildKit secret; the default workflow token cannot read other private
+repositories.
 
 For a local build, export `ORG_REPO_READ_TOKEN` in your shell and run:
 
@@ -34,6 +36,10 @@ docker buildx build --load \
 The token is available only during the Cargo build and is not stored in the image.
 
 ### Configuration
+
+Use a fresh `data_dir` when upgrading from bfa.3 with IFA/BFA assets: bfa.5
+changes their schema IDs and stored mint transition values. Keep existing
+wallet data separate until a migration is available.
 
 ```toml
 [api]
@@ -49,7 +55,7 @@ btc_rpc_password = "dev"
 indexer_address = "tcp://127.0.0.1:50001"
 proxy_address = ["rpc://127.0.0.1:3000/json-rpc"]
 # Optional BFA support (not on mainnet); BFA mints are checked on the EVM RPC,
-# which must be on `eth_chain_id` and serve the logs of the whole chain.
+# which must be on `eth_chain_id` and serve finalized bridge contract state.
 # bfa_enabled = true
 # eth_rpc_url = "http://127.0.0.1:8545"
 # eth_chain_id = 11155111

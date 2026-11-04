@@ -8,12 +8,20 @@ All notable changes to this project are documented here. The format follows
 ### Breaking
 
 - rgb-lib moved to `UTEXO-Protocol/rgb-lib-bfa` tag
-  `v0.3.0-beta.7-upstream-dev-bfa.3`. Its wallet database history diverges
+  `v0.3.0-beta.7-upstream-dev-bfa.5`. Its wallet database history diverges
   from the previous `0.3.0-beta.46-bfa` tag: use a fresh `data_dir`, do not
   open wallets created by the previous build. It speaks proxy protocol v1,
   so the RGB proxy must be `rgb-proxy-server` 0.4.0 or later.
+- bfa.5 also changes the IFA/BFA schema IDs and persisted mint transition value
+  (`4` to `7`, with `4` now meaning link). Existing bfa.3 IFA/BFA wallets require
+  a separate migration before reuse; run this build with a fresh `data_dir`.
 - BFA config needs `eth_chain_id` next to `eth_rpc_url`, and BFA is rejected on
   mainnet.
+- BFA mint validation reads finalized bridge contract state via
+  `getFundsInBlock`, replacing event-log scanning. Bridge integrations must
+  use the bfa.5 contract and provide `before_block` to mint/lock calls. Mint
+  recipients passed to rgb-lib must have no expiration; the invoice expiry
+  still bounds proxy retention. The API does not expose mint endpoints.
 - `/wallet/sendbegin` recipients carry their invoice's `public_key`,
   `encryption` (default `Required`, as for an invoice without `enc`) and
   `expiration_timestamp`; rgb-lib needs the key and the expiration for proxy
@@ -23,15 +31,15 @@ All notable changes to this project are documented here. The format follows
   transfers, at least 10 minutes before the earliest invoice expiration.
 - Responses follow the new rgb-lib models: BFA uses mint rights
   (`MintRight` allocations, `Mint` transfers, `mint` in assignment totals)
-  instead of bridge and link rights; transfers gain
+  instead of bridge rights; transfers gain
   `sender_transport_endpoint` and lose `proxy_recipient_id`; receive data gains
-  `public_key`; IFA link fields are gone.
+  `public_key`. Link support adds `LinkRight` allocations, `Link` transfers
+  and `link` in assignment totals. IFA issuance through this API keeps link
+  rights disabled.
 - `/wallet/burnbegin` passes `burn_recipient` to rgb-lib as the burn reason
   (also accepted as `burn_reason`): 32 bytes, hex, optional `0x`.
 - `/wallet/blindreceive` invoices always expire: omitted or null
-  `duration_seconds` uses a two-hour default. This leaves time to start a BFA
-  mint, which requires at least one hour remaining on the invoice. Explicit
-  durations are preserved.
+  `duration_seconds` uses a two-hour default. Explicit durations are preserved.
 
 ### Added
 
@@ -61,8 +69,12 @@ All notable changes to this project are documented here. The format follows
 - Responses follow the pinned rgb-lib models: `listassets` has a `bfa` group,
   transfers can be `WaitingBroadcast`, allocations can be `MintRight` and
   UTXOs carry `derivation_index`.
-- rgb-lib pinned to `rgb-lib-bfa` tag `v0.3.0-beta.7-upstream-dev-bfa.3`. BFA
-  is in the published RGB crates, so `[patch.crates-io]` is gone.
+- rgb-lib pinned to `rgb-lib-bfa` tag `v0.3.0-beta.7-upstream-dev-bfa.5`,
+  including its exact upstream RGB revisions via workspace patches.
+- Build credentials must also read the private `rgb-tools-devs` repositories
+  listed in the README. The Docker credential helper accepts these dependencies.
+- Classify new bfa.5 errors and replace `MintEventOutOfScanWindow` with
+  `MintEventExpired`.
 
 ## [0.2.0] - 2026-08-03
 

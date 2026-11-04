@@ -12,7 +12,7 @@ resolver = "3"
 # different revisions — the wallet descriptors they derive must match exactly
 # or client-side signatures will not validate server-side.
 [workspace.dependencies]
-rgb-lib = { git = "https://github.com/UTEXO-Protocol/rgb-lib-bfa", tag = "v0.3.0-beta.7-upstream-dev-bfa.3", default-features = false, features = ["electrum", "esplora"] }
+rgb-lib = { git = "https://github.com/UTEXO-Protocol/rgb-lib-bfa", tag = "v0.3.0-beta.7-upstream-dev-bfa.5", default-features = false, features = ["electrum", "esplora"] }
 
 [dependencies]
 actix = "0.13.5"
@@ -47,3 +47,15 @@ toml = "0.9.6"
 [dev-dependencies]
 # pins the wire format of the response models in tests
 serde_json = "1.0"
+
+# Match rgb-lib-bfa.5's upstream revisions. Cargo only applies patches declared
+# by the workspace root, so the library's own patches must be repeated here.
+[patch.crates-io]
+rgb-consensus = { git = "https://github.com/rgb-tools-devs/rgb-consensus.git", rev = "af0b751dc9e51547cd57e025fdc3508e120ddf8a" }
+rgb-ops = { git = "https://github.com/rgb-tools-devs/rgb-ops.git", rev = "ed1d60df69f9e4db65640c0ac61a5779ba9c018c" }
+rgb-invoicing = { git = "https://github.com/rgb-tools-devs/rgb-ops.git", rev = "ed1d60df69f9e4db65640c0ac61a5779ba9c018c" }
+rgb-psbt-utils = { git = "https://github.com/rgb-tools-devs/rgb-api.git", rev = "8e2f515d0f6445e88d3c794a4b592f7bdd3a12df" }
+rgb-schemas = { git = "https://github.com/rgb-tools-devs/rgb-schemas.git", rev = "641a06f31cd277c42222504c8040055c8cbafca5" }
+rgb-strict-encoding = { git = "https://github.com/rgb-protocol/rgb-strict-encoding", rev = "e12b9944b30171950de03778d6666b24bc33d994" }
+rgb-strict-encoding-derive = { git = "https://github.com/rgb-protocol/rgb-strict-encoding", rev = "e12b9944b30171950de03778d6666b24bc33d994" }
+rgb-strict-types = { git = "https://github.com/rgb-protocol/rgb-strict-types", rev = "8714cdcc8af25333c27214cdf9f42a6388d484ff" }

@@ -46,6 +46,8 @@ class DockerCredentialsTest(unittest.TestCase):
     def test_unrelated_urls_never_receive_token(self):
         for url in (
             "https://github.com/another-org/repo",
+            "https://github.com/rgb-tools-devs/another-repo",
+            "https://github.com/rgb-tools-devs/rgb-ops-extra",
             "https://example.com/UTEXO-Protocol/repo",
             "http://github.com/UTEXO-Protocol/repo",
         ):
@@ -53,6 +55,14 @@ class DockerCredentialsTest(unittest.TestCase):
                 result = self.fill(url)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertNotIn("synthetic-build-token", result.stdout + result.stderr)
+
+    def test_private_upstream_dependencies(self):
+        for repo in ("rgb-consensus", "rgb-ops", "rgb-api", "rgb-schemas"):
+            for suffix in ("", ".git"):
+                with self.subTest(repo=repo, suffix=suffix):
+                    result = self.fill(f"https://github.com/rgb-tools-devs/{repo}{suffix}")
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn("password=synthetic-build-token", result.stdout)
 
     def test_missing_or_empty_secret_fails(self):
         for missing in (False, True):

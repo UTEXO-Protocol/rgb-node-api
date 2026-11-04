@@ -88,6 +88,7 @@ pub fn classify(err: &Error) -> ErrorClass {
         Error::InvalidPsbt { .. }
         | Error::CannotCombinePsbts
         | Error::CannotFinalizePsbt
+        | Error::PsbtTooLarge
         | Error::TooManySignaturesInPsbt
         | Error::PsbtInspection { .. } => ErrorClass::InvalidPsbt,
 
@@ -143,6 +144,7 @@ pub fn classify(err: &Error) -> ErrorClass {
         | Error::UnsupportedBurn { .. }
         | Error::UnsupportedInflation { .. }
         | Error::UnsupportedLayer1 { .. }
+        | Error::UnsupportedLink { .. }
         | Error::UnsupportedMint { .. }
         | Error::UnsupportedSchema { .. }
         | Error::UnsupportedWalletManifestVersion { .. } => ErrorClass::Unsupported,
@@ -173,6 +175,8 @@ pub fn classify(err: &Error) -> ErrorClass {
         | Error::MultisigCannotRespondToOperation { .. }
         | Error::MultisigUnexpectedData { .. }
         | Error::RgbInspection { .. }
+        | Error::NoAnchorResolver
+        | Error::NoRejectListResolver
         // Node configuration: the EVM RPC and the proxy auth keys are ours.
         | Error::DuplicateProxyAuthKey { .. }
         | Error::EvmChainIdMismatch { .. }
@@ -194,12 +198,14 @@ pub fn classify(err: &Error) -> ErrorClass {
         | Error::InvalidAmountZero
         | Error::InvalidAssignment
         | Error::InvalidAttachments { .. }
+        | Error::InvalidBeforeBlock { .. }
         | Error::InvalidBitcoinKeys
         | Error::InvalidBitcoinNetwork { .. }
         | Error::InvalidColoringInfo { .. }
         | Error::InvalidBurnReason { .. }
         | Error::InvalidConsignment
         | Error::InvalidContentSignature
+        | Error::InvalidContractId { .. }
         | Error::InvalidCosigner { .. }
         | Error::InvalidDetails { .. }
         | Error::InvalidElectrum { .. }
@@ -222,7 +228,7 @@ pub fn classify(err: &Error) -> ErrorClass {
         | Error::InvalidVanillaKeychain
         | Error::InvalidWitnessVersion { .. }
         // The mint will never be confirmed.
-        | Error::MintEventOutOfScanWindow { .. }
+        | Error::MintEventExpired { .. }
         | Error::MultisigUserNotCosigner
         | Error::NoBurnAmount
         | Error::NoCosignersSupplied
