@@ -7,11 +7,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Breaking
 
-- rgb-lib moved to `UTEXO-Protocol/rgb-lib-bfa` tag
-  `v0.3.0-beta.7-upstream-dev-bfa.3`. Its wallet database history diverges
-  from the previous `0.3.0-beta.46-bfa` tag: use a fresh `data_dir`, do not
-  open wallets created by the previous build. It speaks proxy protocol v1,
-  so the RGB proxy must be `rgb-proxy-server` 0.4.0 or later.
+- Requires `rgb-proxy-server` 0.4.0 or later (proxy protocol v1).
 - BFA config needs `eth_chain_id` next to `eth_rpc_url`, and BFA is rejected on
   mainnet.
 - `/wallet/sendbegin` recipients carry their invoice's `public_key`,
@@ -21,17 +17,12 @@ All notable changes to this project are documented here. The format follows
   to the earliest invoice expiration, minus 10 minutes only for non-donations.
   An explicit one must be at least 5 minutes ahead and, for non-donation proxy
   transfers, at least 10 minutes before the earliest invoice expiration.
-- Responses follow the new rgb-lib models: BFA uses mint rights
-  (`MintRight` allocations, `Mint` transfers, `mint` in assignment totals)
-  instead of bridge and link rights; transfers gain
-  `sender_transport_endpoint` and lose `proxy_recipient_id`; receive data gains
-  `public_key`; IFA link fields are gone.
+- Responses include `MintRight` and `LinkRight` allocations, `Mint` and `Link`
+  transfers, `sender_transport_endpoint` and receive `public_key`.
 - `/wallet/burnbegin` passes `burn_recipient` to rgb-lib as the burn reason
   (also accepted as `burn_reason`): 32 bytes, hex, optional `0x`.
 - `/wallet/blindreceive` invoices always expire: omitted or null
-  `duration_seconds` uses a two-hour default. This leaves time to start a BFA
-  mint, which requires at least one hour remaining on the invoice. Explicit
-  durations are preserved.
+  `duration_seconds` uses a two-hour default. Explicit durations are preserved.
 
 ### Added
 
@@ -61,8 +52,11 @@ All notable changes to this project are documented here. The format follows
 - Responses follow the pinned rgb-lib models: `listassets` has a `bfa` group,
   transfers can be `WaitingBroadcast`, allocations can be `MintRight` and
   UTXOs carry `derivation_index`.
-- rgb-lib pinned to `rgb-lib-bfa` tag `v0.3.0-beta.7-upstream-dev-bfa.3`. BFA
-  is in the published RGB crates, so `[patch.crates-io]` is gone.
+- rgb-lib pinned to `rgb-lib-bfa` tag `v0.3.0-beta.7-upstream-dev-bfa.5`,
+  including its exact upstream RGB revisions via workspace patches.
+- Docker builds support the private upstream dependencies listed in README.
+- Updated error mapping and IFA issuance for bfa.5.
+- BFA mint validation reads finalized bridge contract state.
 
 ## [0.2.0] - 2026-08-03
 

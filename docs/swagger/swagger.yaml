@@ -1761,6 +1761,7 @@ components:
         - type: string
           enum:
             - NonFungible
+            - LinkRight
             - MintRight
             - Any
         - type: object
@@ -1780,7 +1781,7 @@ components:
       title: Assignment
       description: >-
         An RGB assignment, serialized as an externally tagged enum: unit
-        variants are plain strings ("NonFungible", "MintRight", "Any"),
+        variants are plain strings ("NonFungible", "LinkRight", "MintRight", "Any"),
         data-carrying variants are single-key objects (e.g. {"Fungible": 100}).
     Balance:
       properties:
@@ -2258,9 +2259,7 @@ components:
             - type: 'null'
           title: Duration Seconds
           description: >-
-            How long the invoice stays valid, in seconds from now. Invoices
-            always expire: omitted or `null` uses the two-hour default. BFA mint
-            must begin with at least one hour remaining on the invoice.
+            Invoice lifetime in seconds. Omitted or `null` defaults to 7200.
           default: 7200
       type: object
       title: RgbInvoiceRequestModel
@@ -2545,6 +2544,7 @@ components:
         - Send
         - Inflation
         - Burn
+        - Link
         - Mint
       title: TransferKind
     TransferStatus:

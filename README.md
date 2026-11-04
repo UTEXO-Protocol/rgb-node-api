@@ -18,10 +18,9 @@ A local regtest stack (bitcoind + electrs + rgb-proxy) is available via `just up
 
 ### Building the Docker image
 
-The build downloads private `UTEXO-Protocol/rgb-lib-bfa` sources. Configure the
-GitHub Actions secret `ORG_REPO_READ_TOKEN` with Contents read access to that
-repository. CI passes it to Docker as a BuildKit secret; the default workflow
-token cannot read a different private repository.
+Set the GitHub Actions secret `ORG_REPO_READ_TOKEN` with Contents read access
+to `UTEXO-Protocol/rgb-lib-bfa` and `rgb-tools-devs/{rgb-consensus,rgb-ops,rgb-api,rgb-schemas}`.
+CI passes it to Docker as a BuildKit secret.
 
 For a local build, export `ORG_REPO_READ_TOKEN` in your shell and run:
 
@@ -48,8 +47,7 @@ btc_rpc_user = "dev"
 btc_rpc_password = "dev"
 indexer_address = "tcp://127.0.0.1:50001"
 proxy_address = ["rpc://127.0.0.1:3000/json-rpc"]
-# Optional BFA support (not on mainnet); BFA mints are checked on the EVM RPC,
-# which must be on `eth_chain_id` and serve the logs of the whole chain.
+# Optional BFA (non-mainnet): EVM RPC must serve finalized bridge state.
 # bfa_enabled = true
 # eth_rpc_url = "http://127.0.0.1:8545"
 # eth_chain_id = 11155111

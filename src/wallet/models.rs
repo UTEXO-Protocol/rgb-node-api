@@ -52,8 +52,6 @@ pub struct ReceiveReq {
     pub min_confirmations: u8,
 }
 
-// BFA mint_begin needs at least one hour left on the invoice. Leave another
-// hour for the caller to start the mint after creating the invoice.
 const DEFAULT_RECEIVE_DURATION_SECS: u32 = 7200;
 
 fn default_duration_seconds() -> Option<u32> {
@@ -295,16 +293,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn receive_omitted_and_null_durations_leave_time_to_start_a_mint() {
+    fn receive_duration_defaults_and_explicit_values_are_preserved() {
         for body in [
             serde_json::json!({}),
             serde_json::json!({"duration_seconds": null}),
         ] {
             let req: ReceiveReq = serde_json::from_value(body).unwrap();
             assert_eq!(req.duration_seconds(), 7200);
-            // The new library needs a full hour remaining at mint_begin,
-            // including when it starts after the invoice was returned.
-            assert!(req.duration_seconds() - 2 >= 3600);
         }
         for duration in [0, 540, 3600, 10800] {
             let req: ReceiveReq = serde_json::from_value(serde_json::json!({
