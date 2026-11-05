@@ -53,7 +53,7 @@ All notable changes to this project are documented here. The format follows
   transfers can be `WaitingBroadcast`, allocations can be `MintRight` and
   UTXOs carry `derivation_index`.
 - rgb-lib pinned to `rgb-lib-bfa` tag `v0.3.0-beta.7-upstream-dev-bfa.5`,
-  including its exact upstream RGB revisions via workspace patches.
+  with its exact RGB revisions sourced from UTEXO-Protocol mirrors.
 - Docker builds support the private upstream dependencies listed in README.
 - Updated error mapping and IFA issuance for bfa.5.
 - BFA mint validation reads finalized bridge contract state.

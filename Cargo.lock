@@ -3788,7 +3788,7 @@ dependencies = [
 [[package]]
 name = "rgb-consensus"
 version = "0.11.2-rc.1"
-source = "git+https://github.com/rgb-tools-devs/rgb-consensus.git?rev=af0b751dc9e51547cd57e025fdc3508e120ddf8a#af0b751dc9e51547cd57e025fdc3508e120ddf8a"
+source = "git+https://github.com/UTEXO-Protocol/rgb-consensus-s-bfa.git?rev=af0b751dc9e51547cd57e025fdc3508e120ddf8a#af0b751dc9e51547cd57e025fdc3508e120ddf8a"
 dependencies = [
  "amplify",
  "baid64",
@@ -3814,7 +3814,7 @@ dependencies = [
 [[package]]
 name = "rgb-invoicing"
 version = "0.11.2-rc.1"
-source = "git+https://github.com/rgb-tools-devs/rgb-ops.git?rev=ed1d60df69f9e4db65640c0ac61a5779ba9c018c#ed1d60df69f9e4db65640c0ac61a5779ba9c018c"
+source = "git+https://github.com/UTEXO-Protocol/rgb-ops-s-bfa.git?rev=ed1d60df69f9e4db65640c0ac61a5779ba9c018c#ed1d60df69f9e4db65640c0ac61a5779ba9c018c"
 dependencies = [
  "amplify",
  "baid64",
@@ -3914,7 +3914,7 @@ dependencies = [
 [[package]]
 name = "rgb-ops"
 version = "0.11.2-rc.1"
-source = "git+https://github.com/rgb-tools-devs/rgb-ops.git?rev=ed1d60df69f9e4db65640c0ac61a5779ba9c018c#ed1d60df69f9e4db65640c0ac61a5779ba9c018c"
+source = "git+https://github.com/UTEXO-Protocol/rgb-ops-s-bfa.git?rev=ed1d60df69f9e4db65640c0ac61a5779ba9c018c#ed1d60df69f9e4db65640c0ac61a5779ba9c018c"
 dependencies = [
  "amplify",
  "baid64",
@@ -3936,7 +3936,7 @@ dependencies = [
 [[package]]
 name = "rgb-psbt-utils"
 version = "0.11.2-rc.1"
-source = "git+https://github.com/rgb-tools-devs/rgb-api.git?rev=8e2f515d0f6445e88d3c794a4b592f7bdd3a12df#8e2f515d0f6445e88d3c794a4b592f7bdd3a12df"
+source = "git+https://github.com/UTEXO-Protocol/rgb-api-s-bfa.git?rev=8e2f515d0f6445e88d3c794a4b592f7bdd3a12df#8e2f515d0f6445e88d3c794a4b592f7bdd3a12df"
 dependencies = [
  "amplify",
  "getrandom 0.3.4",
@@ -3949,7 +3949,7 @@ dependencies = [
 [[package]]
 name = "rgb-schemas"
 version = "0.11.2-rc.1"
-source = "git+https://github.com/rgb-tools-devs/rgb-schemas.git?rev=641a06f31cd277c42222504c8040055c8cbafca5#641a06f31cd277c42222504c8040055c8cbafca5"
+source = "git+https://github.com/UTEXO-Protocol/rgb-schemas-s-bfa.git?rev=641a06f31cd277c42222504c8040055c8cbafca5#641a06f31cd277c42222504c8040055c8cbafca5"
 dependencies = [
  "amplify",
  "rgb-aluvm",

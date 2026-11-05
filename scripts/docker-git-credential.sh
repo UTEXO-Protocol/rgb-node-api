@@ -14,10 +14,6 @@ done
 [ "$protocol" = https ] && [ "$host" = github.com ] || exit 0
 case "$path" in
     UTEXO-Protocol/*) ;;
-    rgb-tools-devs/rgb-consensus|rgb-tools-devs/rgb-consensus.git|\
-    rgb-tools-devs/rgb-ops|rgb-tools-devs/rgb-ops.git|\
-    rgb-tools-devs/rgb-api|rgb-tools-devs/rgb-api.git|\
-    rgb-tools-devs/rgb-schemas|rgb-tools-devs/rgb-schemas.git) ;;
     *) exit 0 ;;
 esac
 
