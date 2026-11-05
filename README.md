@@ -57,6 +57,13 @@ Wallets are not configured in the file — they are registered at runtime via
 `POST /wallet/register` with the `xpub-van`, `xpub-col`, and `master-fingerprint`
 headers.
 
+Use `network = "signet"` for Bitcoin's public Signet, or
+`network = "signetcustom"` for a Signet with its own challenge. The indexer and
+gateway must use the same network (`GATEWAY_BITCOIN_NETWORK=SignetCustom` for a
+custom Signet). Unknown network names fail startup instead of selecting Mainnet.
+Use separate wallet data directories when switching chains; public Signet balances
+and RGB state do not carry over to a custom Signet.
+
 ## API Reference
 
 Swagger UI is available at `/_swagger` when the server is running.
