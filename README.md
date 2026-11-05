@@ -19,7 +19,7 @@ A local regtest stack (bitcoind + electrs + rgb-proxy) is available via `just up
 ### Building the Docker image
 
 Set the GitHub Actions secret `ORG_REPO_READ_TOKEN` with Contents read access
-to `UTEXO-Protocol/rgb-lib-bfa` and `rgb-tools-devs/{rgb-consensus,rgb-ops,rgb-api,rgb-schemas}`.
+to `UTEXO-Protocol/{rgb-lib-bfa,rgb-consensus-s-bfa,rgb-ops-s-bfa,rgb-api-s-bfa,rgb-schemas-s-bfa}`.
 CI passes it to Docker as a BuildKit secret.
 
 For a local build, export `ORG_REPO_READ_TOKEN` in your shell and run:

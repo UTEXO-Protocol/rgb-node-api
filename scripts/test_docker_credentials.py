@@ -46,8 +46,10 @@ class DockerCredentialsTest(unittest.TestCase):
     def test_unrelated_urls_never_receive_token(self):
         for url in (
             "https://github.com/another-org/repo",
-            "https://github.com/rgb-tools-devs/another-repo",
-            "https://github.com/rgb-tools-devs/rgb-ops-extra",
+            "https://github.com/rgb-tools-devs/rgb-consensus.git",
+            "https://github.com/rgb-tools-devs/rgb-ops.git",
+            "https://github.com/rgb-tools-devs/rgb-api.git",
+            "https://github.com/rgb-tools-devs/rgb-schemas.git",
             "https://example.com/UTEXO-Protocol/repo",
             "http://github.com/UTEXO-Protocol/repo",
         ):
@@ -56,11 +58,11 @@ class DockerCredentialsTest(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertNotIn("synthetic-build-token", result.stdout + result.stderr)
 
-    def test_private_upstream_dependencies(self):
-        for repo in ("rgb-consensus", "rgb-ops", "rgb-api", "rgb-schemas"):
+    def test_private_utexo_dependencies(self):
+        for repo in ("rgb-consensus-s-bfa", "rgb-ops-s-bfa", "rgb-api-s-bfa", "rgb-schemas-s-bfa"):
             for suffix in ("", ".git"):
                 with self.subTest(repo=repo, suffix=suffix):
-                    result = self.fill(f"https://github.com/rgb-tools-devs/{repo}{suffix}")
+                    result = self.fill(f"https://github.com/UTEXO-Protocol/{repo}{suffix}")
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertIn("password=synthetic-build-token", result.stdout)
 
