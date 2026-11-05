@@ -20,7 +20,7 @@ fn unix_now() -> u64 {
 /// online, so probe it here (electrum first, then esplora, as before).
 fn indexer_config(config: &Config) -> Result<IndexerConfig, rgb_lib::Error> {
     let url = config.indexer_address.clone();
-    Ok(match check_indexer_url(&url, None, config.net())? {
+    Ok(match check_indexer_url(&url, None, config.net()?)? {
         IndexerProtocol::Electrum => IndexerConfig::Electrum { url },
         IndexerProtocol::Esplora => IndexerConfig::Esplora { url },
         IndexerProtocol::Bitcoind => {
@@ -57,7 +57,7 @@ impl RgbWalletState {
         let mut wallet = Wallet::new(
             WalletData {
                 data_dir,
-                bitcoin_network: config.net(),
+                bitcoin_network: config.net()?,
                 database_type: DatabaseType::Sqlite,
                 max_allocations_per_utxo: max_allocations_per_utxo.unwrap_or(5),
                 supported_schemas: config.supported_schemas()?,

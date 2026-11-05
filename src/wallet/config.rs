@@ -27,10 +27,11 @@ pub struct Config {
 
 impl Config {
     pub fn supported_schemas(&self) -> Result<Vec<AssetSchema>, rgb_lib::Error> {
+        let network = self.net()?;
         let mut schemas = vec![AssetSchema::Nia];
         if self.bfa_enabled {
             // rgb-lib rejects the BFA schema on mainnet.
-            if self.net() == BitcoinNetwork::Mainnet {
+            if network == BitcoinNetwork::Mainnet {
                 return Err(rgb_lib::Error::CannotUseSchemaOnMainnet {
                     asset_schema: AssetSchema::Bfa,
                 });
@@ -52,7 +53,7 @@ impl Config {
             schemas.push(AssetSchema::Bfa);
         }
         // rgb-lib rejects the IFA schema on mainnet.
-        if self.net() != BitcoinNetwork::Mainnet {
+        if network != BitcoinNetwork::Mainnet {
             schemas.push(AssetSchema::Ifa);
         }
         Ok(schemas)
@@ -76,15 +77,8 @@ impl Config {
         data_dir.to_str().unwrap().to_owned()
     }
 
-    pub fn net(&self) -> BitcoinNetwork {
-        match self.network.to_ascii_lowercase().as_str() {
-            "mainnet" => BitcoinNetwork::Mainnet,
-            "regtest" => BitcoinNetwork::Regtest,
-            "signet" => BitcoinNetwork::Signet,
-            "testnet" => BitcoinNetwork::Testnet,
-            "testnet4" => BitcoinNetwork::Testnet4,
-            _ => BitcoinNetwork::Mainnet,
-        }
+    pub fn net(&self) -> Result<BitcoinNetwork, rgb_lib::Error> {
+        self.network.parse()
     }
 
     pub fn read(path: &str) -> anyhow::Result<Config> {
@@ -102,11 +96,12 @@ mod tests {
 
     #[test]
     fn bfa_is_explicit_and_requires_an_rpc() {
-        assert_eq!(
-            Config::default().supported_schemas().unwrap(),
-            vec![AssetSchema::Nia]
-        );
-        assert!(Config::default().evm_rpc_urls().is_empty());
+        let default = Config {
+            network: "mainnet".into(),
+            ..Default::default()
+        };
+        assert_eq!(default.supported_schemas().unwrap(), vec![AssetSchema::Nia]);
+        assert!(default.evm_rpc_urls().is_empty());
         let mut cfg = Config {
             bfa_enabled: true,
             network: "mainnet".into(),
@@ -154,5 +149,39 @@ mod tests {
         );
         cfg.network = "mainnet".into();
         assert_eq!(cfg.supported_schemas().unwrap(), vec![AssetSchema::Nia]);
+    }
+
+    #[test]
+    fn custom_signet_is_distinct_from_public_signet() {
+        for name in ["signetcustom", "SignetCustom"] {
+            let cfg = Config {
+                network: name.into(),
+                ..Default::default()
+            };
+            assert_eq!(cfg.net().unwrap(), BitcoinNetwork::SignetCustom);
+            assert_eq!(
+                cfg.supported_schemas().unwrap(),
+                vec![AssetSchema::Nia, AssetSchema::Ifa]
+            );
+        }
+        let cfg = Config {
+            network: "signet".into(),
+            ..Default::default()
+        };
+        assert_eq!(cfg.net().unwrap(), BitcoinNetwork::Signet);
+    }
+
+    #[test]
+    fn invalid_network_is_rejected_during_startup_validation() {
+        for name in ["", "signet-custom", "singet"] {
+            let cfg = Config {
+                network: name.into(),
+                ..Default::default()
+            };
+            assert!(matches!(
+                cfg.supported_schemas(),
+                Err(rgb_lib::Error::InvalidBitcoinNetwork { .. })
+            ));
+        }
     }
 }
