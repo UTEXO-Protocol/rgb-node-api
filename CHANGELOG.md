@@ -26,13 +26,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `/wallet/decodeinvoice` decodes an RGB invoice without wallet headers.
 - `/wallet/sendbtcbegin` and `/wallet/sendbtcend` send BTC from the wallet's
   vanilla side with a PSBT signed by the client; the end call returns the
   broadcast `txid`.
 - `/wallet/witnessreceive` creates an RGB invoice paid to a new output of the
   sender's transaction, so the wallet needs no colorable UTXO up front. It
   takes the same body as `/wallet/blindreceive`.
-- Opt-in BFA support: set `bfa_enabled = true`, `eth_rpc_url` and `eth_chain_id`
+- Opt-in BFA support: set `bfa_enabled = true`, `eth_rpc_url`, `eth_chain_id`,
+  `eth_min_mint_lock_blocks` and `eth_max_mint_lock_blocks`
   in `[wallet]`.
   Wallets then accept the BFA schema and validate BFA consignments against the
   EVM RPC. BFA stays disabled without the opt-in.
@@ -52,10 +54,11 @@ All notable changes to this project are documented here. The format follows
 - Responses follow the pinned rgb-lib models: `listassets` has a `bfa` group,
   transfers can be `WaitingBroadcast`, allocations can be `MintRight` and
   UTXOs carry `derivation_index`.
-- rgb-lib pinned to `rgb-lib-bfa` tag `v0.3.0-beta.7-upstream-dev-bfa.5`,
-  with its exact RGB revisions sourced from UTEXO-Protocol mirrors.
+- rgb-lib pinned to `rgb-lib-bfa` tag `v0.3.0-beta.7-upstream-dev-bfa.6`,
+  with its exact RGB revisions from public `rgb-protocol` repositories.
 - Docker builds support the private upstream dependencies listed in README.
-- Updated error mapping and IFA issuance for bfa.5.
+- Updated error mapping, EVM chain configuration and transfer queries for bfa.6.
+- Transfer responses expose `change_utxos`; BFA assets include `known_circulating_supply`.
 - BFA mint validation reads finalized bridge contract state.
 
 ## [0.2.0] - 2026-08-03

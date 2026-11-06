@@ -80,7 +80,7 @@ impl RgbWalletState {
             failed_witness_receive_grace_secs: 604800,
             // Our proxies run without proxy-level authentication.
             proxy_auth_keys: HashMap::new(),
-            evm_rpc_urls: config.evm_rpc_urls(),
+            evm_chains: config.evm_chains()?,
         })?;
 
         Ok(RgbWalletState {

@@ -39,6 +39,7 @@ impl ApiService for WalletSrv {
             .service(resource("/blindreceive").route(post().to(node_api::blind_receive)))
             .service(
                 scope("/wallet")
+                    .service(resource("/decodeinvoice").route(post().to(node_api::decode_invoice)))
                     .service(resource("/register").route(post().to(node_api::register)))
                     .service(resource("/listunspents").route(post().to(node_api::list_unspents)))
                     .service(
@@ -116,5 +117,89 @@ fn get_app_info() -> AppInfo {
         version: PKG_VERSION,
         build: git_version(),
         commit: git_commit(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api_core::api_errors::ApiError;
+    use actix_web::{App, http::StatusCode, test, web::JsonConfig};
+    use serde_json::{Value, json};
+    use tokio_util::task::TaskTracker;
+
+    #[actix_web::test]
+    async fn decode_invoice_without_wallet_headers() {
+        let tasks = TaskTracker::new();
+        let ctx = WalletCtx::new(Config::default(), &tasks);
+        let app =
+            test::init_service(App::new().service(WalletSrv { ctx: ctx.clone() }.service())).await;
+        let recipient = "bc:utxob:4vm1CX2Z-K8hMo59-e7dgGBS-Jka7mYn-Xe~yP85-yUiHHxr-aVlYa";
+        let public_key = "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a";
+        let invoice = format!(
+            "rgb:~/~/~/{recipient}?expiry=1&enc=1&pk={public_key}&endpoints=rpc://localhost:3000/json-rpc&order=test"
+        );
+        let req = test::TestRequest::post()
+            .uri("/wallet/decodeinvoice")
+            .set_json(json!({"invoice": invoice}))
+            .to_request();
+        let res = test::call_service(&app, req).await;
+        assert_eq!(res.status(), StatusCode::OK);
+        let body: Value = test::read_body_json(res).await;
+        assert_eq!(
+            body,
+            json!({
+                "recipient_id": recipient,
+                "asset_schema": null,
+                "asset_id": null,
+                "assignment": "Any",
+                "assignment_name": null,
+                "network": "Mainnet",
+                "expiration_timestamp": 1,
+                "transport_endpoints": ["rpc://localhost:3000/json-rpc"],
+                "public_key": public_key,
+                "encryption": "Optional",
+                "unknown_query_params": {"order": "test"}
+            })
+        );
+        ctx.stop().await.unwrap();
+        tasks.close();
+        tasks.wait().await;
+    }
+
+    #[actix_web::test]
+    async fn decode_invoice_rejects_invalid_input() {
+        let tasks = TaskTracker::new();
+        let ctx = WalletCtx::new(Config::default(), &tasks);
+        let app = test::init_service(
+            App::new()
+                .app_data(JsonConfig::default().error_handler(|err, _| ApiError::from(err).into()))
+                .service(WalletSrv { ctx: ctx.clone() }.service()),
+        )
+        .await;
+        for (input, status, code) in [
+            (json!({"invoice": "invalid"}), StatusCode::BAD_REQUEST, 1008),
+            (json!({}), StatusCode::UNPROCESSABLE_ENTITY, 1001),
+            (
+                json!({"invoice": 42}),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                1001,
+            ),
+        ] {
+            let req = test::TestRequest::post()
+                .uri("/wallet/decodeinvoice")
+                .set_json(input)
+                .to_request();
+            let res = test::call_service(&app, req).await;
+            assert_eq!(res.status(), status);
+            let body: Value = test::read_body_json(res).await;
+            assert_eq!(body["error"]["code"], code);
+            if code == 1008 {
+                assert_eq!(body["error"]["details"]["kind"], "InvalidInvoice");
+            }
+        }
+        ctx.stop().await.unwrap();
+        tasks.close();
+        tasks.wait().await;
     }
 }

@@ -107,6 +107,18 @@ async fn derive_wctx(ctx: &WalletCtx, wallet_key: XWalletKey) -> Result<WalletCt
     .map_err(map_rgb_error)
 }
 
+#[derive(serde::Deserialize)]
+pub struct DecodeInvoiceReq {
+    pub invoice: String,
+}
+
+pub async fn decode_invoice(
+    req: Json<DecodeInvoiceReq>,
+) -> Result<Json<rgb_lib::wallet::InvoiceData>, ApiError> {
+    let invoice = rgb_lib::wallet::Invoice::new(req.0.invoice).map_err(map_rgb_error)?;
+    Ok(Json(invoice.invoice_data()))
+}
+
 #[derive(serde::Serialize)]
 pub struct RegisterRes {
     pub address: String,

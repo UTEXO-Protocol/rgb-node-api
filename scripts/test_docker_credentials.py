@@ -38,10 +38,11 @@ class DockerCredentialsTest(unittest.TestCase):
         )
 
     def test_private_dependency(self):
-        result = self.fill("https://github.com/UTEXO-Protocol/rgb-lib-bfa")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("username=x-access-token", result.stdout)
-        self.assertIn("password=synthetic-build-token", result.stdout)
+        for suffix in ("", ".git"):
+            result = self.fill(f"https://github.com/UTEXO-Protocol/rgb-lib-bfa{suffix}")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("username=x-access-token", result.stdout)
+            self.assertIn("password=synthetic-build-token", result.stdout)
 
     def test_unrelated_urls_never_receive_token(self):
         for url in (
@@ -58,13 +59,14 @@ class DockerCredentialsTest(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertNotIn("synthetic-build-token", result.stdout + result.stderr)
 
-    def test_private_utexo_dependencies(self):
-        for repo in ("rgb-consensus-s-bfa", "rgb-ops-s-bfa", "rgb-api-s-bfa", "rgb-schemas-s-bfa"):
+    def test_public_dependencies_never_receive_token(self):
+        for repo in ("rgb-consensus", "rgb-ops", "rgb-api", "rgb-schemas",
+                     "rgb-aluvm", "rgb-ascii-armor", "rgb-strict-encoding", "rgb-strict-types"):
             for suffix in ("", ".git"):
                 with self.subTest(repo=repo, suffix=suffix):
-                    result = self.fill(f"https://github.com/UTEXO-Protocol/{repo}{suffix}")
-                    self.assertEqual(result.returncode, 0, result.stderr)
-                    self.assertIn("password=synthetic-build-token", result.stdout)
+                    result = self.fill(f"https://github.com/rgb-protocol/{repo}{suffix}")
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertNotIn("synthetic-build-token", result.stdout + result.stderr)
 
     def test_missing_or_empty_secret_fails(self):
         for missing in (False, True):

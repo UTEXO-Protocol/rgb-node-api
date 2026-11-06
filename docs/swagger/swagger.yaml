@@ -24,6 +24,30 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AppInfo'
+  /wallet/decodeinvoice:
+    post:
+      summary: Decode Invoice
+      description: >-
+        Parse an RGB invoice without wallet headers or registration.
+        Does not check expiration or payment status.
+      operationId: decode_invoice_wallet_decodeinvoice_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecodeInvoiceReq'
+      responses:
+        '200':
+          description: Decoded invoice
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceData'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
   /wallet/register:
     post:
       summary: Register Wallet
@@ -1500,6 +1524,58 @@ components:
         - balance
         - media
       title: AssetCfa
+    DecodeInvoiceReq:
+      type: object
+      required: [invoice]
+      properties:
+        invoice:
+          type: string
+          example: 'rgb:~/~/~/bc:utxob:4vm1CX2Z-K8hMo59-e7dgGBS-Jka7mYn-Xe~yP85-yUiHHxr-aVlYa'
+    InvoiceData:
+      type: object
+      required:
+        - recipient_id
+        - asset_schema
+        - asset_id
+        - assignment
+        - assignment_name
+        - network
+        - expiration_timestamp
+        - transport_endpoints
+        - public_key
+        - encryption
+        - unknown_query_params
+      properties:
+        recipient_id:
+          type: string
+        asset_schema:
+          enum: [Nia, Uda, Cfa, Ifa, Bfa, null]
+        asset_id:
+          type: [string, 'null']
+        assignment:
+          $ref: '#/components/schemas/Assignment'
+        assignment_name:
+          type: [string, 'null']
+        network:
+          type: string
+          enum: [Mainnet, Testnet, Testnet4, Signet, Regtest, SignetCustom]
+        expiration_timestamp:
+          type: [integer, 'null']
+          description: Unix timestamp in seconds, if specified in the invoice.
+        transport_endpoints:
+          type: array
+          items:
+            type: string
+        public_key:
+          type: [string, 'null']
+          description: Recipient's Ed25519 public key in hex.
+        encryption:
+          type: string
+          enum: [Unsupported, Optional, Required]
+        unknown_query_params:
+          type: object
+          additionalProperties:
+            type: string
     AssetBfa:
       properties:
         asset_id:
@@ -1522,6 +1598,9 @@ components:
         initial_supply:
           type: integer
           title: Initial Supply
+        known_circulating_supply:
+          type: integer
+          title: Known Circulating Supply
         timestamp:
           type: integer
           title: Timestamp
@@ -1547,6 +1626,7 @@ components:
         - details
         - precision
         - initial_supply
+        - known_circulating_supply
         - timestamp
         - added_at
         - balance
@@ -2478,10 +2558,10 @@ components:
           anyOf:
             - $ref: '#/components/schemas/Outpoint'
             - type: 'null'
-        change_utxo:
-          anyOf:
-            - $ref: '#/components/schemas/Outpoint'
-            - type: 'null'
+        change_utxos:
+          type: array
+          items:
+            $ref: '#/components/schemas/Outpoint'
         expiration_timestamp:
           anyOf:
             - type: integer
@@ -2527,7 +2607,7 @@ components:
         - txid
         - recipient_id
         - receive_utxo
-        - change_utxo
+        - change_utxos
         - expiration_timestamp
         - transport_endpoints
         - invoice_string

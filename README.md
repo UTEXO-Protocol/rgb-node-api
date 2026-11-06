@@ -19,7 +19,7 @@ A local regtest stack (bitcoind + electrs + rgb-proxy) is available via `just up
 ### Building the Docker image
 
 Set the GitHub Actions secret `ORG_REPO_READ_TOKEN` with Contents read access
-to `UTEXO-Protocol/{rgb-lib-bfa,rgb-consensus-s-bfa,rgb-ops-s-bfa,rgb-api-s-bfa,rgb-schemas-s-bfa}`.
+to `UTEXO-Protocol/rgb-lib-bfa`. Its RGB dependencies use public `rgb-protocol` repositories.
 CI passes it to Docker as a BuildKit secret.
 
 For a local build, export `ORG_REPO_READ_TOKEN` in your shell and run:
@@ -51,7 +51,14 @@ proxy_address = ["rpc://127.0.0.1:3000/json-rpc"]
 # bfa_enabled = true
 # eth_rpc_url = "http://127.0.0.1:8545"
 # eth_chain_id = 11155111
+# eth_min_mint_lock_blocks = 2
+# eth_max_mint_lock_blocks = 1000
 ```
+
+For BFA, all four `eth_*` fields are required. Choose the mint lock bounds for
+your EVM chain's block time. The maximum bounds how long a received mint can
+reserve a UTXO, plus finalization time; it must be at least the minimum.
+A minimum below 2 acts as 2; a maximum below 2 rejects all mints.
 
 Wallets are not configured in the file — they are registered at runtime via
 `POST /wallet/register` with the `xpub-van`, `xpub-col`, and `master-fingerprint`
@@ -59,7 +66,8 @@ headers.
 
 ## API Reference
 
-Swagger UI is available at `/_swagger` when the server is running.
+Swagger UI is available at `/_swagger`; the OpenAPI specification is at
+`/_swagger/swagger.yaml`. The API and signing CLI use rgb-lib `bfa.6`.
 
 ### System
 
@@ -70,7 +78,8 @@ Swagger UI is available at `/_swagger` when the server is running.
 
 ### Node/SDK API (`/wallet/`)
 
-Watch-only, external signing. Auth via three headers: `xpub-van`, `xpub-col`, `master-fingerprint`.
+Wallet operations use three headers: `xpub-van`, `xpub-col`, `master-fingerprint`.
+`/wallet/decodeinvoice` requires no wallet headers or registration.
 
 The begin/end pattern allows clients to sign PSBTs externally:
 1. Call `*begin` to get an unsigned PSBT
@@ -80,6 +89,7 @@ The begin/end pattern allows clients to sign PSBTs externally:
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/register` | Register a read-only wallet |
+| POST | `/decodeinvoice` | Decode an RGB invoice |
 | POST | `/address` | Get receive address |
 | POST | `/btcbalance` | Get BTC balance |
 | POST | `/listassets` | List all assets |
@@ -109,3 +119,31 @@ The begin/end pattern allows clients to sign PSBTs externally:
 A root-level `POST /blindreceive` is also registered as a legacy alias for
 `POST /wallet/blindreceive`. It is marked for removal in the source and should
 not be used — integrators should call `/wallet/blindreceive`.
+
+### Decode an invoice
+
+```bash
+curl -X POST http://127.0.0.1:34000/wallet/decodeinvoice \
+  -H 'Content-Type: application/json' \
+  -d '{"invoice":"rgb:~/~/~/bc:utxob:4vm1CX2Z-K8hMo59-e7dgGBS-Jka7mYn-Xe~yP85-yUiHHxr-aVlYa"}'
+```
+
+```json
+{
+  "recipient_id": "bc:utxob:4vm1CX2Z-K8hMo59-e7dgGBS-Jka7mYn-Xe~yP85-yUiHHxr-aVlYa",
+  "asset_schema": null,
+  "asset_id": null,
+  "assignment": "Any",
+  "assignment_name": null,
+  "network": "Mainnet",
+  "expiration_timestamp": null,
+  "transport_endpoints": [],
+  "public_key": null,
+  "encryption": "Required",
+  "unknown_query_params": {}
+}
+```
+
+Decoding parses the invoice; it does not check whether it has expired or been paid.
+Malformed invoice strings return HTTP 400 with `error.code = 1008`. Missing or malformed
+JSON fields return HTTP 422.
