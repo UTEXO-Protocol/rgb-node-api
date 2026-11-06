@@ -432,6 +432,266 @@ paths:
           $ref: '#/components/responses/InternalError'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
+  /wallet/issueassetbfa:
+    post:
+      summary: Issue BFA
+      operationId: issue_bfa_wallet_issueassetbfa_post
+      description: >-
+        Issue a BFA with zero initial supply and the requested mint rights. The EVM chain and bridge address are committed in genesis. Requires BFA support and free colorable UTXOs.
+      parameters:
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueAssetBfaRequestModel'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetBfa'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /wallet/mintbegin:
+    post:
+      summary: Begin Mint
+      operationId: mint_begin_wallet_mintbegin_post
+      description: >-
+        Prepare a BFA mint and post its consignment for recipient checks. The recipient assignment must be Fungible and its expiration_timestamp must be omitted or null. before_block is an EVM block deadline. Uses the configured sender proxy; requires a mint right.
+      parameters:
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MintBeginRequestModel'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MintBeginResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /wallet/mintend:
+    post:
+      summary: End Mint
+      operationId: mint_end_wallet_mintend_post
+      description: >-
+        Complete a signed mint after the matching EVM lock is finalized. Returns 409 MintLockNotFound while the lock is unavailable, or 400 MintLockExpired when its deadline has expired. Retry the same signed PSBT after finalization. EVM transactions are performed outside this API.
+      parameters:
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendAssetEndRequestModel'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /wallet/linkbegin:
+    post:
+      summary: Begin Link
+      operationId: link_begin_wallet_linkbegin_post
+      description: >-
+        Prepare a link to another RGB contract using the wallet's link right. An asset can be linked only once. With dry_run, batch_transfer_idx is null and no pending transfer is reserved; PSBT and transfer files are still produced.
+      parameters:
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LinkBeginRequestModel'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LinkBeginResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /wallet/linkend:
+    post:
+      summary: End Link
+      operationId: link_end_wallet_linkend_post
+      description: >-
+        Complete a signed link transaction. The target contract is recorded in asset metadata and a link consignment is produced.
+      parameters:
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendAssetEndRequestModel'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /wallet/inflatebegin:
     post:
       summary: Inflate Begin
@@ -887,12 +1147,158 @@ paths:
           $ref: '#/components/responses/InternalError'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
+  /wallet/getassetmetadata:
+    post:
+      summary: Get Asset Metadata
+      operationId: get_asset_metadata_wallet_getassetmetadata_post
+      description: >-
+        Return metadata for an asset known to this wallet.
+      parameters:
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetMetadataRequestModel'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Metadata'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /wallet/getreceivedmint:
+    post:
+      summary: Get Received Mint
+      operationId: get_received_mint_wallet_getreceivedmint_post
+      description: >-
+        Return mint details checked by this wallet during refresh. Call /wallet/refresh to process incoming consignments first. The mint field is null when no checked mint is available for the recipient, including failed or refused mints. This is not proof of settlement.
+      parameters:
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GetReceivedMintRequestModel'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetReceivedMintResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /wallet/inspectpsbt:
+    post:
+      summary: Inspect PSBT
+      operationId: inspect_psbt_wallet_inspectpsbt_post
+      description: >-
+        Inspect Bitcoin inputs, outputs, fee, partial signatures and ownership relative to this wallet. Does not sign, broadcast or validate RGB transitions.
+      parameters:
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InspectPsbtRequestModel'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PsbtInspection'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /wallet/getconsignment:
     post:
       summary: Get Consignment
       operationId: get_consignment_wallet_getconsignment_post
       description: >-
-        Return the consignment this wallet produced for a send or burn of an asset, identified by its TXID. Returns 404 `not_found` if the wallet has no such consignment.
+        Return the consignment this wallet produced for a send, burn or link of an asset, identified by its TXID. Returns 404 `not_found` if the wallet has no such consignment.
       parameters:
         - name: xpub-van
           in: header
@@ -1524,6 +1930,329 @@ components:
         - balance
         - media
       title: AssetCfa
+    IssueAssetBfaRequestModel:
+      type: object
+      required: [ticker, name, mint_rights, chain_id, contract_address]
+      properties:
+        ticker:
+          type: string
+        name:
+          type: string
+        precision:
+          type: integer
+          default: 0
+        mint_rights:
+          type: integer
+          minimum: 1
+          maximum: 255
+        chain_id:
+          type: integer
+          description: EIP-155 chain ID of the bridge.
+        contract_address:
+          type: string
+          description: EVM bridge contract address.
+        reject_list_address:
+          type: [string, 'null']
+        link_right:
+          type: boolean
+          default: false
+        linked_from_contract:
+          type: [string, 'null']
+    MintBeginRequestModel:
+      type: object
+      required: [asset_id, recipient, before_block]
+      properties:
+        asset_id:
+          type: string
+        recipient:
+          $ref: '#/components/schemas/Recipient'
+        before_block:
+          type: integer
+          description: EVM block the lock must be included before, within the configured mint lock bounds.
+        fee_rate:
+          type: integer
+          default: 1
+        min_confirmations:
+          type: integer
+          default: 1
+    MintBeginResult:
+      type: object
+      required: [psbt, batch_transfer_idx, details]
+      properties:
+        psbt:
+          type: string
+          description: Base64 encoded unsigned PSBT.
+        batch_transfer_idx:
+          type: integer
+        details:
+          $ref: '#/components/schemas/MintDetails'
+    MintDetails:
+      type: object
+      required: [fascia_path, min_confirmations, entropy, opid]
+      properties:
+        fascia_path:
+          type: string
+          description: Fascia file path on the server.
+        min_confirmations:
+          type: integer
+        entropy:
+          type: integer
+        opid:
+          type: string
+          description: RGB mint operation ID; use getreceivedmint for the checked EVM lock_id.
+    LinkBeginRequestModel:
+      type: object
+      required: [asset_id, linked_to_contract]
+      properties:
+        asset_id:
+          type: string
+        linked_to_contract:
+          type: string
+        fee_rate:
+          type: integer
+          default: 1
+        min_confirmations:
+          type: integer
+          default: 1
+        dry_run:
+          type: boolean
+          default: false
+    LinkBeginResult:
+      type: object
+      required: [psbt, batch_transfer_idx, details]
+      properties:
+        psbt:
+          type: string
+          description: Base64 encoded unsigned PSBT.
+        batch_transfer_idx:
+          type: [integer, 'null']
+        details:
+          $ref: '#/components/schemas/LinkDetails'
+    LinkDetails:
+      type: object
+      required: [fascia_path, min_confirmations, entropy]
+      properties:
+        fascia_path:
+          type: string
+          description: Fascia file path on the server.
+        min_confirmations:
+          type: integer
+        entropy:
+          type: integer
+    AssetMetadataRequestModel:
+      type: object
+      required: [asset_id]
+      properties:
+        asset_id:
+          type: string
+    GetReceivedMintRequestModel:
+      type: object
+      required: [recipient_id]
+      properties:
+        recipient_id:
+          type: string
+          description: Recipient ID returned by blindreceive or witnessreceive.
+    GetReceivedMintResponse:
+      type: object
+      required: [mint]
+      properties:
+        mint:
+          anyOf:
+            - $ref: '#/components/schemas/ReceivedMint'
+            - type: 'null'
+    ReceivedMint:
+      type: object
+      required: [opid, lock_id, amount, before_block, evm_chain_id, bridge_contract]
+      properties:
+        opid:
+          type: string
+          description: RGB mint operation ID in hex.
+        lock_id:
+          type: string
+          description: Lock ID in hex, committing to the mint operation and its Bitcoin transaction.
+        amount:
+          type: integer
+          minimum: 0
+        before_block:
+          type: integer
+          minimum: 0
+          description: EVM block the lock must be included before.
+        evm_chain_id:
+          type: integer
+          minimum: 0
+        bridge_contract:
+          type: string
+          description: EVM bridge contract address.
+    InspectPsbtRequestModel:
+      type: object
+      required: [psbt]
+      properties:
+        psbt:
+          type: string
+          description: Base64 encoded PSBT, unsigned or signed.
+    PsbtInspection:
+      type: object
+      required: [txid, inputs, outputs, total_input_sat, total_output_sat, fee_sat, signature_count, size_vbytes]
+      properties:
+        txid:
+          type: string
+        inputs:
+          type: array
+          items:
+            $ref: '#/components/schemas/PsbtInputInfo'
+        outputs:
+          type: array
+          items:
+            $ref: '#/components/schemas/PsbtOutputInfo'
+        total_input_sat:
+          type: integer
+          minimum: 0
+        total_output_sat:
+          type: integer
+          minimum: 0
+        fee_sat:
+          type: integer
+          minimum: 0
+        signature_count:
+          type: integer
+          minimum: 0
+          description: >-
+            Counts partial ECDSA and Taproot script-path signatures only.
+            Excludes Taproot key-path and finalized witness signatures;
+            zero does not mean the PSBT is unsigned.
+        size_vbytes:
+          type: integer
+          minimum: 0
+          description: Unsigned transaction size in virtual bytes.
+    PsbtInputInfo:
+      type: object
+      required: [outpoint, amount_sat, is_mine]
+      properties:
+        outpoint:
+          $ref: '#/components/schemas/Outpoint'
+        amount_sat:
+          type: integer
+          minimum: 0
+        is_mine:
+          type: boolean
+    PsbtOutputInfo:
+      type: object
+      required: [address, script_pubkey_hex, amount_sat, is_op_return, is_mine]
+      properties:
+        address:
+          type: [string, 'null']
+        script_pubkey_hex:
+          type: string
+        amount_sat:
+          type: integer
+          minimum: 0
+        is_op_return:
+          type: boolean
+        is_mine:
+          type: boolean
+    Metadata:
+      type: object
+      required:
+        - asset_schema
+        - initial_supply
+        - max_supply
+        - known_circulating_supply
+        - timestamp
+        - name
+        - precision
+        - ticker
+        - details
+        - token
+        - reject_list_url
+        - linked_from_contract
+        - linked_to_contract
+      properties:
+        asset_schema:
+          type: string
+          enum: [Nia, Uda, Cfa, Ifa, Bfa]
+        initial_supply:
+          type: integer
+          minimum: 0
+        max_supply:
+          type: integer
+          minimum: 0
+        known_circulating_supply:
+          type: integer
+          minimum: 0
+        timestamp:
+          type: integer
+          description: Asset genesis Unix timestamp in seconds.
+        name:
+          type: string
+        precision:
+          type: integer
+        ticker:
+          type: [string, 'null']
+        details:
+          type: [string, 'null']
+        token:
+          anyOf:
+            - $ref: '#/components/schemas/Token'
+            - type: 'null'
+        reject_list_url:
+          type: [string, 'null']
+        linked_from_contract:
+          type: [string, 'null']
+        linked_to_contract:
+          type: [string, 'null']
+          description: Target contract of a link performed by this wallet, if any.
+    Token:
+      type: object
+      required: [index, ticker, name, details, embedded_media, media, attachments, reserves]
+      properties:
+        index:
+          type: integer
+        ticker:
+          type: [string, 'null']
+        name:
+          type: [string, 'null']
+        details:
+          type: [string, 'null']
+        embedded_media:
+          anyOf:
+            - $ref: '#/components/schemas/EmbeddedMedia'
+            - type: 'null'
+        media:
+          anyOf:
+            - $ref: '#/components/schemas/Media'
+            - type: 'null'
+        attachments:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/Media'
+        reserves:
+          anyOf:
+            - $ref: '#/components/schemas/ProofOfReserves'
+            - type: 'null'
+    EmbeddedMedia:
+      type: object
+      required: [mime, data]
+      properties:
+        mime:
+          type: string
+        data:
+          type: array
+          items:
+            type: integer
+            minimum: 0
+            maximum: 255
+    ProofOfReserves:
+      type: object
+      required: [utxo, proof]
+      properties:
+        utxo:
+          $ref: '#/components/schemas/Outpoint'
+        proof:
+          type: array
+          items:
+            type: integer
+            minimum: 0
+            maximum: 255
     DecodeInvoiceReq:
       type: object
       required: [invoice]
@@ -2007,7 +2736,7 @@ components:
         txid:
           type: string
           title: Txid
-          description: TXID of the send or burn that produced the consignment.
+          description: TXID of the send, burn or link that produced the consignment.
       type: object
       required:
         - asset_id
@@ -2234,9 +2963,8 @@ components:
           anyOf:
             - $ref: '#/components/schemas/WitnessData'
             - type: 'null'
-        amount:
-          type: integer
-          title: Amount
+        assignment:
+          $ref: '#/components/schemas/Assignment'
         transport_endpoints:
           items:
             type: string
@@ -2267,17 +2995,17 @@ components:
             - type: 'null'
           title: Expiration Timestamp
           description: >-
-            The invoice expiration. Required when `transport_endpoints` is not
-            empty.
+            The invoice expiration for sends. Omit or set null for mintbegin,
+            which uses before_block instead.
       type: object
       required:
         - recipient_id
-        - amount
+        - assignment
         - transport_endpoints
       title: Recipient
       description: >-
-        Recipient model for asset transfer. The amount is a plain integer and is
-        mapped to a fungible RGB assignment when the transfer is built.
+        Recipient assignment: a fungible amount or an RGB right. For example,
+        {"Fungible": 100}, "MintRight" or "LinkRight".
     RegisterModel:
       properties:
         address:
@@ -2325,14 +3053,10 @@ components:
             this wallet, otherwise the request fails with 404 `not_found`. Omit
             it (or send `null`) to accept any asset — the only option for an
             asset the wallet has never held.
-        amount:
-          anyOf:
-            - type: integer
-            - type: 'null'
-          title: Amount
-          description: >-
-            Amount to request, in the asset's smallest unit. Omit it, or send
-            `0`, to accept any amount.
+        assignment:
+          $ref: '#/components/schemas/Assignment'
+          default: Any
+          description: Requested tokens or rights; defaults to Any.
         duration_seconds:
           anyOf:
             - type: integer
@@ -2342,6 +3066,7 @@ components:
             Invoice lifetime in seconds. Omitted or `null` defaults to 7200.
           default: 7200
       type: object
+      additionalProperties: false
       title: RgbInvoiceRequestModel
       description: Request model for RGB invoices.
     SendBtcBeginRequestModel:

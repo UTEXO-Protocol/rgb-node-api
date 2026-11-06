@@ -7,6 +7,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Breaking
 
+- RGB send recipients and receive requests use `assignment` for token amounts
+  and rights (`Fungible`, `MintRight`, `LinkRight`) instead of `amount`.
 - Requires `rgb-proxy-server` 0.4.0 or later (proxy protocol v1).
 - BFA config needs `eth_chain_id` next to `eth_rpc_url`, and BFA is rejected on
   mainnet.
@@ -27,6 +29,12 @@ All notable changes to this project are documented here. The format follows
 ### Added
 
 - `/wallet/decodeinvoice` decodes an RGB invoice without wallet headers.
+- `/wallet/getreceivedmint` returns checked mint details, including the EVM lock ID.
+- `/wallet/issueassetbfa`, `/wallet/mintbegin` and `/wallet/mintend` expose BFA issuance
+  and externally signed minting.
+- `/wallet/linkbegin` and `/wallet/linkend` link an asset to another contract.
+- `/wallet/getassetmetadata` returns asset metadata.
+- `/wallet/inspectpsbt` returns Bitcoin inputs, outputs, fees and partial signature counts.
 - `/wallet/sendbtcbegin` and `/wallet/sendbtcend` send BTC from the wallet's
   vanilla side with a PSBT signed by the client; the end call returns the
   broadcast `txid`.
@@ -46,7 +54,7 @@ All notable changes to this project are documented here. The format follows
 - `/wallet/burnbegin` and `/wallet/burnend` support burning BFA and IFA assets.
   An optional 32-byte hex burn reason is accepted as `burn_recipient` or
   `burn_reason`.
-- `/wallet/getconsignment` returns the hex consignment of a send or burn by
+- `/wallet/getconsignment` returns the hex consignment of a send, burn or link by
   `asset_id` and `txid`.
 
 ### Changed

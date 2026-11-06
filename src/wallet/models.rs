@@ -41,11 +41,12 @@ pub struct BackupPath {
 
 /// `RgbInvoiceRequestModel` in the API spec.
 #[derive(Clone, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ReceiveReq {
     #[serde(default)]
     pub asset_id: Option<String>,
-    #[serde(default)]
-    pub amount: Option<u64>,
+    #[serde(default = "default_assignment")]
+    pub assignment: rgb_lib::Assignment,
     #[serde(default = "default_duration_seconds")]
     pub duration_seconds: Option<u32>,
     #[serde(default = "default_min_confirmations")]
@@ -53,6 +54,10 @@ pub struct ReceiveReq {
 }
 
 const DEFAULT_RECEIVE_DURATION_SECS: u32 = 7200;
+
+fn default_assignment() -> rgb_lib::Assignment {
+    rgb_lib::Assignment::Any
+}
 
 fn default_duration_seconds() -> Option<u32> {
     Some(DEFAULT_RECEIVE_DURATION_SECS)
@@ -109,6 +114,44 @@ pub struct IssueIfaReq {
     pub reject_list_url: Option<String>,
 }
 
+#[derive(serde::Deserialize)]
+pub struct IssueBfaReq {
+    pub ticker: String,
+    pub name: String,
+    #[serde(default)]
+    pub precision: u8,
+    pub mint_rights: u8,
+    pub chain_id: u64,
+    pub contract_address: String,
+    pub reject_list_address: Option<String>,
+    #[serde(default)]
+    pub link_right: bool,
+    pub linked_from_contract: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct MintBeginReq {
+    pub asset_id: String,
+    pub recipient: SendRecipient,
+    pub before_block: u64,
+    #[serde(default = "default_fee_rate")]
+    pub fee_rate: u64,
+    #[serde(default = "default_min_confirmations")]
+    pub min_confirmations: u8,
+}
+
+#[derive(serde::Deserialize)]
+pub struct LinkBeginReq {
+    pub asset_id: String,
+    pub linked_to_contract: String,
+    #[serde(default = "default_fee_rate")]
+    pub fee_rate: u64,
+    #[serde(default = "default_min_confirmations")]
+    pub min_confirmations: u8,
+    #[serde(default)]
+    pub dry_run: bool,
+}
+
 /// `InflateBeginRequestModel` in the API spec.
 #[derive(serde::Deserialize)]
 pub struct InflateBeginReq {
@@ -144,14 +187,12 @@ fn default_size() -> Option<u32> {
     Some(1000)
 }
 
-/// `Recipient` in the API spec — the amount is expressed as a plain integer and
-/// mapped to an `Assignment::Fungible` when building the rgb-lib recipient.
 #[derive(Clone, serde::Deserialize)]
 pub struct SendRecipient {
     pub recipient_id: String,
     #[serde(default)]
     pub witness_data: Option<rgb_lib::wallet::WitnessData>,
-    pub amount: u64,
+    pub assignment: rgb_lib::Assignment,
     pub transport_endpoints: Vec<String>,
     /// Recipient's Ed25519 public key (hex), the invoice `pk` field. rgb-lib
     /// requires it when `transport_endpoints` is not empty.
@@ -161,8 +202,6 @@ pub struct SendRecipient {
     /// encryption is required.
     #[serde(default = "default_encryption")]
     pub encryption: rgb_lib::Encryption,
-    /// The invoice expiration. rgb-lib requires it when `transport_endpoints`
-    /// is not empty.
     #[serde(default)]
     pub expiration_timestamp: Option<u64>,
 }
@@ -176,7 +215,7 @@ impl From<SendRecipient> for rgb_lib::wallet::Recipient {
         rgb_lib::wallet::Recipient {
             recipient_id: r.recipient_id,
             witness_data: r.witness_data,
-            assignment: rgb_lib::Assignment::Fungible(r.amount),
+            assignment: r.assignment,
             transport_endpoints: r.transport_endpoints,
             public_key: r.public_key,
             encryption: r.encryption,
@@ -264,11 +303,26 @@ impl BurnBeginReq {
     }
 }
 
+#[derive(serde::Deserialize)]
+pub struct GetReceivedMintReq {
+    pub recipient_id: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct GetReceivedMintRes {
+    pub mint: Option<rgb_lib::wallet::ReceivedMint>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct InspectPsbtReq {
+    pub psbt: String,
+}
+
 /// `GetConsignmentRequestModel` in the API spec.
 #[derive(serde::Deserialize)]
 pub struct GetConsignmentReq {
     pub asset_id: String,
-    /// TXID of the send or burn that produced the consignment.
+    /// TXID of the operation that produced the consignment.
     pub txid: String,
 }
 
@@ -349,7 +403,7 @@ mod tests {
                 .map(|exp| {
                     serde_json::json!({
                         "recipient_id": "r",
-                        "amount": 1,
+                        "assignment": {"Fungible": 1},
                         "transport_endpoints": [],
                         "expiration_timestamp": exp,
                     })
@@ -388,7 +442,7 @@ mod tests {
     fn send_recipient_encryption_defaults_to_required() {
         let r: SendRecipient = serde_json::from_value(serde_json::json!({
             "recipient_id": "r",
-            "amount": 1,
+            "assignment": {"Fungible": 1},
             "transport_endpoints": [],
         }))
         .unwrap();
@@ -404,10 +458,10 @@ mod tests {
         let mut req: SendBeginReq = serde_json::from_value(serde_json::json!({
             "donation": true,
             "recipient_map": {"rgb:x": [
-                {"recipient_id": "later", "amount": 1,
+                {"recipient_id": "later", "assignment": {"Fungible": 1},
                  "transport_endpoints": ["rpc://proxy/json-rpc"],
                  "expiration_timestamp": now + 1200},
-                {"recipient_id": "earlier", "amount": 1,
+                {"recipient_id": "earlier", "assignment": {"Fungible": 1},
                  "transport_endpoints": ["rpc://proxy/json-rpc"],
                  "expiration_timestamp": now + 540},
             ]},
@@ -448,6 +502,56 @@ mod tests {
 #[cfg(test)]
 mod request_tests {
     use super::*;
+
+    #[test]
+    fn receive_and_send_preserve_assignments() {
+        for assignment in [
+            rgb_lib::Assignment::Fungible(25),
+            rgb_lib::Assignment::MintRight,
+            rgb_lib::Assignment::LinkRight,
+        ] {
+            let req: ReceiveReq = serde_json::from_value(serde_json::json!({
+                "assignment": assignment,
+            }))
+            .unwrap();
+            assert_eq!(req.assignment, assignment);
+            let recipient: SendRecipient = serde_json::from_value(serde_json::json!({
+                "recipient_id": "recipient",
+                "assignment": assignment,
+                "transport_endpoints": [],
+            }))
+            .unwrap();
+            let recipient: rgb_lib::wallet::Recipient = recipient.into();
+            assert_eq!(recipient.assignment, assignment);
+        }
+        let req: ReceiveReq = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(req.assignment, rgb_lib::Assignment::Any);
+        assert!(serde_json::from_value::<ReceiveReq>(serde_json::json!({"amount": 25})).is_err());
+        assert!(
+            serde_json::from_value::<SendRecipient>(serde_json::json!({
+                "recipient_id": "recipient", "amount": 25, "transport_endpoints": [],
+            }))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn mint_requires_a_block_deadline_and_keeps_recipient_expiration_explicit() {
+        let mut body = serde_json::json!({
+            "asset_id": "rgb:x",
+            "recipient": {
+                "recipient_id": "recipient", "assignment": {"Fungible": 25},
+                "transport_endpoints": [],
+            },
+        });
+        assert!(serde_json::from_value::<MintBeginReq>(body.clone()).is_err());
+        body["before_block"] = serde_json::json!(1000);
+        let req: MintBeginReq = serde_json::from_value(body.clone()).unwrap();
+        assert_eq!(req.recipient.expiration_timestamp, None);
+        body["recipient"]["expiration_timestamp"] = serde_json::json!(1234);
+        let req: MintBeginReq = serde_json::from_value(body).unwrap();
+        assert_eq!(req.recipient.expiration_timestamp, Some(1234));
+    }
 
     #[test]
     fn send_btc_requires_address_amount_and_fee_rate() {

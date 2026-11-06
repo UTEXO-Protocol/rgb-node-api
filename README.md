@@ -78,8 +78,7 @@ Swagger UI is available at `/_swagger`; the OpenAPI specification is at
 
 ### Node/SDK API (`/wallet/`)
 
-Wallet operations use three headers: `xpub-van`, `xpub-col`, `master-fingerprint`.
-`/wallet/decodeinvoice` requires no wallet headers or registration.
+Watch-only, external signing. Auth via three headers: `xpub-van`, `xpub-col`, `master-fingerprint`.
 
 The begin/end pattern allows clients to sign PSBTs externally:
 1. Call `*begin` to get an unsigned PSBT
@@ -89,7 +88,10 @@ The begin/end pattern allows clients to sign PSBTs externally:
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/register` | Register a read-only wallet |
-| POST | `/decodeinvoice` | Decode an RGB invoice |
+| POST | `/decodeinvoice` | Decode an RGB invoice (no wallet headers required) |
+| POST | `/getreceivedmint` | Get a received mint checked by the wallet |
+| POST | `/getassetmetadata` | Get asset metadata |
+| POST | `/inspectpsbt` | Inspect PSBT inputs, outputs, fee and partial signatures |
 | POST | `/address` | Get receive address |
 | POST | `/btcbalance` | Get BTC balance |
 | POST | `/listassets` | List all assets |
@@ -101,6 +103,11 @@ The begin/end pattern allows clients to sign PSBTs externally:
 | POST | `/witnessreceive` | Generate RGB invoice paid to a new output of the sender's transaction |
 | POST | `/issueassetnia` | Issue new NIA token |
 | POST | `/issueassetifa` | Issue IFA tokens and reserve inflation rights |
+| POST | `/issueassetbfa` | Issue a BFA with mint rights and an optional link right |
+| POST | `/mintbegin` | Prepare a BFA mint (unsigned PSBT) |
+| POST | `/mintend` | Finalize a BFA mint after the EVM lock is finalized |
+| POST | `/linkbegin` | Prepare a link to another asset contract (unsigned PSBT) |
+| POST | `/linkend` | Finalize an asset contract link (signed PSBT) |
 | POST | `/inflatebegin` | Create additional IFA tokens (unsigned PSBT) |
 | POST | `/inflateend` | Finalize IFA inflation (signed PSBT) |
 | POST | `/createutxosbegin` | Create UTXOs (unsigned PSBT) |
@@ -111,7 +118,7 @@ The begin/end pattern allows clients to sign PSBTs externally:
 | POST | `/sendend` | Finalize token send (signed PSBT) |
 | POST | `/burnbegin` | Burn BFA or IFA tokens (unsigned PSBT) |
 | POST | `/burnend` | Finalize token burn (signed PSBT) |
-| POST | `/getconsignment` | Get send/burn consignment by asset ID and TXID |
+| POST | `/getconsignment` | Get send/burn/link consignment by asset ID and TXID |
 | POST | `/failtransfers` | Mark transfers as failed |
 | POST | `/refresh` | Force wallet sync |
 | POST | `/drop` | Remove wallet from memory |
@@ -119,31 +126,3 @@ The begin/end pattern allows clients to sign PSBTs externally:
 A root-level `POST /blindreceive` is also registered as a legacy alias for
 `POST /wallet/blindreceive`. It is marked for removal in the source and should
 not be used — integrators should call `/wallet/blindreceive`.
-
-### Decode an invoice
-
-```bash
-curl -X POST http://127.0.0.1:34000/wallet/decodeinvoice \
-  -H 'Content-Type: application/json' \
-  -d '{"invoice":"rgb:~/~/~/bc:utxob:4vm1CX2Z-K8hMo59-e7dgGBS-Jka7mYn-Xe~yP85-yUiHHxr-aVlYa"}'
-```
-
-```json
-{
-  "recipient_id": "bc:utxob:4vm1CX2Z-K8hMo59-e7dgGBS-Jka7mYn-Xe~yP85-yUiHHxr-aVlYa",
-  "asset_schema": null,
-  "asset_id": null,
-  "assignment": "Any",
-  "assignment_name": null,
-  "network": "Mainnet",
-  "expiration_timestamp": null,
-  "transport_endpoints": [],
-  "public_key": null,
-  "encryption": "Required",
-  "unknown_query_params": {}
-}
-```
-
-Decoding parses the invoice; it does not check whether it has expired or been paid.
-Malformed invoice strings return HTTP 400 with `error.code = 1008`. Missing or malformed
-JSON fields return HTTP 422.
