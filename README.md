@@ -19,7 +19,7 @@ A local regtest stack (bitcoind + electrs + rgb-proxy) is available via `just up
 ### Building the Docker image
 
 Set the GitHub Actions secret `ORG_REPO_READ_TOKEN` with Contents read access
-to `UTEXO-Protocol/rgb-lib-bfa` and `rgb-tools-devs/{rgb-consensus,rgb-ops,rgb-api,rgb-schemas}`.
+to `UTEXO-Protocol/rgb-lib-bfa`. Its RGB dependencies use public `rgb-protocol` repositories.
 CI passes it to Docker as a BuildKit secret.
 
 For a local build, export `ORG_REPO_READ_TOKEN` in your shell and run:
@@ -51,7 +51,14 @@ proxy_address = ["rpc://127.0.0.1:3000/json-rpc"]
 # bfa_enabled = true
 # eth_rpc_url = "http://127.0.0.1:8545"
 # eth_chain_id = 11155111
+# eth_min_mint_lock_blocks = 2
+# eth_max_mint_lock_blocks = 1000
 ```
+
+For BFA, all four `eth_*` fields are required. Choose the mint lock bounds for
+your EVM chain's block time. The maximum bounds how long a received mint can
+reserve a UTXO, plus finalization time; it must be at least the minimum.
+A minimum below 2 acts as 2; a maximum below 2 rejects all mints.
 
 Wallets are not configured in the file — they are registered at runtime via
 `POST /wallet/register` with the `xpub-van`, `xpub-col`, and `master-fingerprint`
@@ -59,7 +66,8 @@ headers.
 
 ## API Reference
 
-Swagger UI is available at `/_swagger` when the server is running.
+Swagger UI is available at `/_swagger`; the OpenAPI specification is at
+`/_swagger/swagger.yaml`. The API and signing CLI use rgb-lib `bfa.6`.
 
 ### System
 
@@ -80,6 +88,10 @@ The begin/end pattern allows clients to sign PSBTs externally:
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/register` | Register a read-only wallet |
+| POST | `/decodeinvoice` | Decode an RGB invoice (no wallet headers required) |
+| POST | `/getreceivedmint` | Get a received mint checked by the wallet |
+| POST | `/getassetmetadata` | Get asset metadata |
+| POST | `/inspectpsbt` | Inspect PSBT inputs, outputs, fee and partial signatures |
 | POST | `/address` | Get receive address |
 | POST | `/btcbalance` | Get BTC balance |
 | POST | `/listassets` | List all assets |
@@ -91,6 +103,11 @@ The begin/end pattern allows clients to sign PSBTs externally:
 | POST | `/witnessreceive` | Generate RGB invoice paid to a new output of the sender's transaction |
 | POST | `/issueassetnia` | Issue new NIA token |
 | POST | `/issueassetifa` | Issue IFA tokens and reserve inflation rights |
+| POST | `/issueassetbfa` | Issue a BFA with mint rights and an optional link right |
+| POST | `/mintbegin` | Prepare a BFA mint (unsigned PSBT) |
+| POST | `/mintend` | Finalize a BFA mint after the EVM lock is finalized |
+| POST | `/linkbegin` | Prepare a link to another asset contract (unsigned PSBT) |
+| POST | `/linkend` | Finalize an asset contract link (signed PSBT) |
 | POST | `/inflatebegin` | Create additional IFA tokens (unsigned PSBT) |
 | POST | `/inflateend` | Finalize IFA inflation (signed PSBT) |
 | POST | `/createutxosbegin` | Create UTXOs (unsigned PSBT) |
@@ -101,7 +118,7 @@ The begin/end pattern allows clients to sign PSBTs externally:
 | POST | `/sendend` | Finalize token send (signed PSBT) |
 | POST | `/burnbegin` | Burn BFA or IFA tokens (unsigned PSBT) |
 | POST | `/burnend` | Finalize token burn (signed PSBT) |
-| POST | `/getconsignment` | Get send/burn consignment by asset ID and TXID |
+| POST | `/getconsignment` | Get send/burn/link consignment by asset ID and TXID |
 | POST | `/failtransfers` | Mark transfers as failed |
 | POST | `/refresh` | Force wallet sync |
 | POST | `/drop` | Remove wallet from memory |

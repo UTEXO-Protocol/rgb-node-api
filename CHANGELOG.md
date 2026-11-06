@@ -7,6 +7,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Breaking
 
+- RGB send recipients and receive requests use `assignment` for token amounts
+  and rights (`Fungible`, `MintRight`, `LinkRight`) instead of `amount`.
 - Requires `rgb-proxy-server` 0.4.0 or later (proxy protocol v1).
 - BFA config needs `eth_chain_id` next to `eth_rpc_url`, and BFA is rejected on
   mainnet.
@@ -26,13 +28,21 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `/wallet/decodeinvoice` decodes an RGB invoice without wallet headers.
+- `/wallet/getreceivedmint` returns checked mint details, including the EVM lock ID.
+- `/wallet/issueassetbfa`, `/wallet/mintbegin` and `/wallet/mintend` expose BFA issuance
+  and externally signed minting.
+- `/wallet/linkbegin` and `/wallet/linkend` link an asset to another contract.
+- `/wallet/getassetmetadata` returns asset metadata.
+- `/wallet/inspectpsbt` returns Bitcoin inputs, outputs, fees and partial signature counts.
 - `/wallet/sendbtcbegin` and `/wallet/sendbtcend` send BTC from the wallet's
   vanilla side with a PSBT signed by the client; the end call returns the
   broadcast `txid`.
 - `/wallet/witnessreceive` creates an RGB invoice paid to a new output of the
   sender's transaction, so the wallet needs no colorable UTXO up front. It
   takes the same body as `/wallet/blindreceive`.
-- Opt-in BFA support: set `bfa_enabled = true`, `eth_rpc_url` and `eth_chain_id`
+- Opt-in BFA support: set `bfa_enabled = true`, `eth_rpc_url`, `eth_chain_id`,
+  `eth_min_mint_lock_blocks` and `eth_max_mint_lock_blocks`
   in `[wallet]`.
   Wallets then accept the BFA schema and validate BFA consignments against the
   EVM RPC. BFA stays disabled without the opt-in.
@@ -44,7 +54,7 @@ All notable changes to this project are documented here. The format follows
 - `/wallet/burnbegin` and `/wallet/burnend` support burning BFA and IFA assets.
   An optional 32-byte hex burn reason is accepted as `burn_recipient` or
   `burn_reason`.
-- `/wallet/getconsignment` returns the hex consignment of a send or burn by
+- `/wallet/getconsignment` returns the hex consignment of a send, burn or link by
   `asset_id` and `txid`.
 
 ### Changed
@@ -52,10 +62,11 @@ All notable changes to this project are documented here. The format follows
 - Responses follow the pinned rgb-lib models: `listassets` has a `bfa` group,
   transfers can be `WaitingBroadcast`, allocations can be `MintRight` and
   UTXOs carry `derivation_index`.
-- rgb-lib pinned to `rgb-lib-bfa` tag `v0.3.0-beta.7-upstream-dev-bfa.5`,
-  including its exact upstream RGB revisions via workspace patches.
+- rgb-lib pinned to `rgb-lib-bfa` tag `v0.3.0-beta.7-upstream-dev-bfa.6`,
+  with its exact RGB revisions from public `rgb-protocol` repositories.
 - Docker builds support the private upstream dependencies listed in README.
-- Updated error mapping and IFA issuance for bfa.5.
+- Updated error mapping, EVM chain configuration and transfer queries for bfa.6.
+- Transfer responses expose `change_utxos`; BFA assets include `known_circulating_supply`.
 - BFA mint validation reads finalized bridge contract state.
 
 ## [0.2.0] - 2026-08-03

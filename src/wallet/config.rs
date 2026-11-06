@@ -1,4 +1,4 @@
-use rgb_lib::{AssetSchema, BitcoinNetwork};
+use rgb_lib::{AssetSchema, BitcoinNetwork, wallet::EvmChain};
 use serde::{Deserialize, Serialize};
 use serde_valid::toml::FromTomlStr;
 use std::collections::HashMap;
@@ -14,13 +14,14 @@ pub struct Config {
     pub btc_rpc_password: String,
     pub indexer_address: String,
     pub proxy_address: Vec<String>,
-    /// EVM RPC used for BFA mint validation. Optional for NIA wallets.
     #[serde(default)]
     pub eth_rpc_url: Option<String>,
-    /// EIP-155 chain ID of `eth_rpc_url`; rgb-lib checks the RPC is on it.
     #[serde(default)]
     pub eth_chain_id: Option<u64>,
-    /// Opt in to BFA validation; existing NIA deployments remain unchanged.
+    #[serde(default)]
+    pub eth_min_mint_lock_blocks: Option<u64>,
+    #[serde(default)]
+    pub eth_max_mint_lock_blocks: Option<u64>,
     #[serde(default)]
     pub bfa_enabled: bool,
 }
@@ -29,41 +30,57 @@ impl Config {
     pub fn supported_schemas(&self) -> Result<Vec<AssetSchema>, rgb_lib::Error> {
         let mut schemas = vec![AssetSchema::Nia];
         if self.bfa_enabled {
-            // rgb-lib rejects the BFA schema on mainnet.
             if self.net() == BitcoinNetwork::Mainnet {
                 return Err(rgb_lib::Error::CannotUseSchemaOnMainnet {
                     asset_schema: AssetSchema::Bfa,
                 });
             }
-            if self
-                .eth_rpc_url
-                .as_deref()
-                .is_none_or(|url| url.trim().is_empty())
-            {
-                return Err(rgb_lib::Error::InvalidEvmRpcUrl {
-                    details: "BFA requires an explicit EVM RPC".into(),
-                });
-            }
-            if self.eth_chain_id.is_none() {
-                return Err(rgb_lib::Error::InvalidEvmRpcUrl {
-                    details: "BFA requires the chain ID of the EVM RPC".into(),
-                });
-            }
+            self.evm_chains()?;
             schemas.push(AssetSchema::Bfa);
         }
-        // rgb-lib rejects the IFA schema on mainnet.
         if self.net() != BitcoinNetwork::Mainnet {
             schemas.push(AssetSchema::Ifa);
         }
         Ok(schemas)
     }
 
-    /// The EVM RPCs passed to `OnlineOptions`, only when BFA is enabled.
-    pub fn evm_rpc_urls(&self) -> HashMap<u64, String> {
-        match (self.bfa_enabled, self.eth_chain_id, &self.eth_rpc_url) {
-            (true, Some(chain_id), Some(url)) => HashMap::from([(chain_id, url.clone())]),
-            _ => HashMap::new(),
+    pub fn evm_chains(&self) -> Result<HashMap<u64, EvmChain>, rgb_lib::Error> {
+        if !self.bfa_enabled {
+            return Ok(HashMap::new());
         }
+        let rpc_url = self
+            .eth_rpc_url
+            .as_ref()
+            .filter(|url| !url.trim().is_empty())
+            .ok_or_else(|| rgb_lib::Error::InvalidEvmRpcUrl {
+                details: "BFA requires eth_rpc_url".into(),
+            })?;
+        let chain_id = self
+            .eth_chain_id
+            .ok_or_else(|| rgb_lib::Error::InvalidEvmChain {
+                details: "BFA requires eth_chain_id".into(),
+            })?;
+        let (Some(min), Some(max)) = (self.eth_min_mint_lock_blocks, self.eth_max_mint_lock_blocks)
+        else {
+            return Err(rgb_lib::Error::InvalidEvmChain {
+                details: "BFA requires eth_min_mint_lock_blocks and eth_max_mint_lock_blocks"
+                    .into(),
+            });
+        };
+        if min > max {
+            return Err(rgb_lib::Error::InvalidEvmChain {
+                details: "eth_max_mint_lock_blocks must be at least eth_min_mint_lock_blocks"
+                    .into(),
+            });
+        }
+        Ok(HashMap::from([(
+            chain_id,
+            EvmChain {
+                rpc_url: rpc_url.clone(),
+                min_mint_lock_blocks: min,
+                max_mint_lock_blocks: max,
+            },
+        )]))
     }
 
     pub fn datadir(&self) -> String {
@@ -106,7 +123,7 @@ mod tests {
             Config::default().supported_schemas().unwrap(),
             vec![AssetSchema::Nia]
         );
-        assert!(Config::default().evm_rpc_urls().is_empty());
+        assert!(Config::default().evm_chains().unwrap().is_empty());
         let mut cfg = Config {
             bfa_enabled: true,
             network: "mainnet".into(),
@@ -125,21 +142,53 @@ mod tests {
         cfg.eth_rpc_url = Some("http://127.0.0.1:31014".into());
         assert!(cfg.supported_schemas().is_err());
         cfg.eth_chain_id = Some(11155111);
+        assert!(cfg.supported_schemas().is_err());
+        cfg.eth_min_mint_lock_blocks = Some(2);
+        assert!(cfg.supported_schemas().is_err());
+        cfg.eth_max_mint_lock_blocks = Some(1000);
         assert_eq!(
             cfg.supported_schemas().unwrap(),
             vec![AssetSchema::Nia, AssetSchema::Bfa, AssetSchema::Ifa]
         );
         assert_eq!(
-            cfg.evm_rpc_urls(),
-            HashMap::from([(11155111, "http://127.0.0.1:31014".to_string())])
+            cfg.evm_chains().unwrap(),
+            HashMap::from([(
+                11155111,
+                EvmChain {
+                    rpc_url: "http://127.0.0.1:31014".into(),
+                    min_mint_lock_blocks: 2,
+                    max_mint_lock_blocks: 1000,
+                }
+            )])
         );
-        // An RPC configured without the opt-in stays unused.
         let unused = Config {
             eth_rpc_url: Some("http://127.0.0.1:31014".into()),
             eth_chain_id: Some(11155111),
             ..Default::default()
         };
-        assert!(unused.evm_rpc_urls().is_empty());
+        assert!(unused.evm_chains().unwrap().is_empty());
+    }
+
+    #[test]
+    fn bfa_rejects_inconsistent_mint_lock_bounds() {
+        let mut cfg = Config {
+            bfa_enabled: true,
+            network: "regtest".into(),
+            eth_rpc_url: Some("http://127.0.0.1:8545".into()),
+            eth_chain_id: Some(31337),
+            ..Default::default()
+        };
+        for (min, max) in [(2, 1), (100, 99)] {
+            cfg.eth_min_mint_lock_blocks = Some(min);
+            cfg.eth_max_mint_lock_blocks = Some(max);
+            assert!(matches!(
+                cfg.supported_schemas(),
+                Err(rgb_lib::Error::InvalidEvmChain { .. })
+            ));
+        }
+        cfg.eth_min_mint_lock_blocks = Some(0);
+        cfg.eth_max_mint_lock_blocks = Some(0);
+        assert!(cfg.supported_schemas().is_ok());
     }
 
     #[test]
