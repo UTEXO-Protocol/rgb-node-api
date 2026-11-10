@@ -107,6 +107,18 @@ async fn derive_wctx(ctx: &WalletCtx, wallet_key: XWalletKey) -> Result<WalletCt
     .map_err(map_rgb_error)
 }
 
+#[derive(serde::Deserialize)]
+pub struct DecodeInvoiceReq {
+    pub invoice: String,
+}
+
+pub async fn decode_invoice(
+    req: Json<DecodeInvoiceReq>,
+) -> Result<Json<rgb_lib::wallet::InvoiceData>, ApiError> {
+    let invoice = rgb_lib::wallet::Invoice::new(req.0.invoice).map_err(map_rgb_error)?;
+    Ok(Json(invoice.invoice_data()))
+}
+
 #[derive(serde::Serialize)]
 pub struct RegisterRes {
     pub address: String,
@@ -330,6 +342,67 @@ pub async fn issue_ifa(
     Ok(Json(asset))
 }
 
+pub async fn issue_bfa(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+    req: Json<IssueBfaReq>,
+) -> Result<Json<rgb_lib::wallet::AssetBFA>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    Ok(Json(
+        ctx.issue_bfa_token(req.0).await.map_err(map_rgb_error)?,
+    ))
+}
+
+pub async fn mint_begin(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+    req: Json<MintBeginReq>,
+) -> Result<Json<rgb_lib::wallet::MintBeginResult>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    Ok(Json(ctx.mint_begin(req.0).await.map_err(map_rgb_error)?))
+}
+
+pub async fn mint_end(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+    req: Json<Psbt>,
+) -> Result<Json<SendResult>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    let res = ctx
+        .mint_end(req.0.signed_psbt)
+        .await
+        .map_err(map_rgb_error)?;
+    Ok(Json(SendResult {
+        txid: res.txid,
+        batch_transfer_idx: res.batch_transfer_idx,
+    }))
+}
+
+pub async fn link_begin(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+    req: Json<LinkBeginReq>,
+) -> Result<Json<rgb_lib::wallet::LinkBeginResult>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    Ok(Json(ctx.link_begin(req.0).await.map_err(map_rgb_error)?))
+}
+
+pub async fn link_end(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+    req: Json<Psbt>,
+) -> Result<Json<SendResult>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    let res = ctx
+        .link_end(req.0.signed_psbt)
+        .await
+        .map_err(map_rgb_error)?;
+    Ok(Json(SendResult {
+        txid: res.txid,
+        batch_transfer_idx: res.batch_transfer_idx,
+    }))
+}
+
 pub async fn inflate_begin(
     ctx: Data<WalletCtx>,
     wallet_key: XWalletKey,
@@ -406,6 +479,39 @@ pub async fn burn_end(
         txid: res.txid,
         batch_transfer_idx: res.batch_transfer_idx,
     }))
+}
+
+pub async fn get_asset_metadata(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+    req: Json<AssetId>,
+) -> Result<Json<rgb_lib::wallet::Metadata>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    let metadata = ctx.asset_info(&req.asset_id).await.map_err(map_rgb_error)?;
+    Ok(Json(metadata))
+}
+
+pub async fn get_received_mint(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+    req: Json<GetReceivedMintReq>,
+) -> Result<Json<GetReceivedMintRes>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    let mint = ctx
+        .get_received_mint(req.0.recipient_id)
+        .await
+        .map_err(map_rgb_error)?;
+    Ok(Json(GetReceivedMintRes { mint }))
+}
+
+pub async fn inspect_psbt(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+    req: Json<InspectPsbtReq>,
+) -> Result<Json<rgb_lib::wallet::PsbtInspection>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    let inspection = ctx.inspect_psbt(req.0.psbt).await.map_err(map_rgb_error)?;
+    Ok(Json(inspection))
 }
 
 pub async fn get_consignment(
@@ -526,6 +632,7 @@ mod tests {
             })
             .unwrap(),
             serde_json::to_string(&EmptyRes {}).unwrap(),
+            serde_json::to_string(&GetReceivedMintRes { mint: None }).unwrap(),
         ];
 
         assert_eq!(
@@ -537,6 +644,7 @@ mod tests {
                 r#"{"changed":true}"#,
                 r#"{"address":"bcrt1qxy"}"#,
                 r#"{}"#,
+                r#"{"mint":null}"#,
             ]
         );
     }

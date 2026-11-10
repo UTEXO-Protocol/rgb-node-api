@@ -88,7 +88,6 @@ pub fn classify(err: &Error) -> ErrorClass {
         Error::InvalidPsbt { .. }
         | Error::CannotCombinePsbts
         | Error::CannotFinalizePsbt
-        | Error::PsbtTooLarge
         | Error::TooManySignaturesInPsbt
         | Error::PsbtInspection { .. } => ErrorClass::InvalidPsbt,
 
@@ -118,8 +117,7 @@ pub fn classify(err: &Error) -> ErrorClass {
         | Error::InvoiceNotReserved
         | Error::InvoiceQuotaExceeded
         | Error::LastMintRight
-        // The mint event may still appear on the EVM chain: retry later.
-        | Error::MintEventNotFound { .. }
+        | Error::MintLockNotFound { .. }
         | Error::MultisigLegacyOperation { .. }
         | Error::MultisigOperationInProgress
         | Error::MultisigTransferStatusMismatch
@@ -175,12 +173,13 @@ pub fn classify(err: &Error) -> ErrorClass {
         | Error::MultisigCannotRespondToOperation { .. }
         | Error::MultisigUnexpectedData { .. }
         | Error::RgbInspection { .. }
-        | Error::NoAnchorResolver
+        | Error::NoClaimResolver
         | Error::NoRejectListResolver
         // Node configuration: the EVM RPC and the proxy auth keys are ours.
         | Error::DuplicateProxyAuthKey { .. }
         | Error::EvmChainIdMismatch { .. }
         | Error::InvalidEvmRpcUrl { .. }
+        | Error::InvalidEvmChain { .. }
         | Error::InvalidProxyAuthKey { .. }
         | Error::InvalidProxyAuthSignature
         // The node keeps watch-only wallets on purpose (signing happens in the
@@ -189,6 +188,7 @@ pub fn classify(err: &Error) -> ErrorClass {
 
         // -- everything else is invalid request data -------------------------
         Error::BitcoinNetworkMismatch
+        | Error::CannotLinkToItself
         | Error::ConsignmentRejected { .. }
         | Error::ConsignmentValidationFailed { .. }
         | Error::EmptyFile { .. }
@@ -228,7 +228,7 @@ pub fn classify(err: &Error) -> ErrorClass {
         | Error::InvalidVanillaKeychain
         | Error::InvalidWitnessVersion { .. }
         // The mint will never be confirmed.
-        | Error::MintEventExpired { .. }
+        | Error::MintLockExpired { .. }
         | Error::MultisigUserNotCosigner
         | Error::NoBurnAmount
         | Error::NoCosignersSupplied

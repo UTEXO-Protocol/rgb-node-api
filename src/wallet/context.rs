@@ -228,6 +228,43 @@ impl WalletCtx {
         self.send_cmd(cmd, recv).await
     }
 
+    pub async fn issue_bfa_token(
+        &self,
+        req: IssueBfaReq,
+    ) -> Result<wallet::AssetBFA, rgb_lib::Error> {
+        let (resp, recv) = oneshot::channel();
+        self.send_cmd(WalletCmd::IssueBfaToken { req, resp }, recv)
+            .await
+    }
+
+    pub async fn mint_begin(
+        &self,
+        req: MintBeginReq,
+    ) -> Result<wallet::MintBeginResult, rgb_lib::Error> {
+        let (resp, recv) = oneshot::channel();
+        self.send_cmd(WalletCmd::MintBegin { req, resp }, recv)
+            .await
+    }
+
+    pub async fn mint_end(&self, psbt: String) -> Result<wallet::OperationResult, rgb_lib::Error> {
+        let (resp, recv) = oneshot::channel();
+        self.send_cmd(WalletCmd::MintEnd { psbt, resp }, recv).await
+    }
+
+    pub async fn link_begin(
+        &self,
+        req: LinkBeginReq,
+    ) -> Result<wallet::LinkBeginResult, rgb_lib::Error> {
+        let (resp, recv) = oneshot::channel();
+        self.send_cmd(WalletCmd::LinkBegin { req, resp }, recv)
+            .await
+    }
+
+    pub async fn link_end(&self, psbt: String) -> Result<wallet::OperationResult, rgb_lib::Error> {
+        let (resp, recv) = oneshot::channel();
+        self.send_cmd(WalletCmd::LinkEnd { psbt, resp }, recv).await
+    }
+
     pub async fn inflate_begin(&self, req: InflateBeginReq) -> Result<String, rgb_lib::Error> {
         let (resp, recv) = oneshot::channel();
         let cmd = WalletCmd::InflateBegin { req, resp };
@@ -320,6 +357,25 @@ impl WalletCtx {
         self.send_cmd(cmd, recv).await
     }
 
+    pub async fn get_received_mint(
+        &self,
+        recipient_id: String,
+    ) -> Result<Option<wallet::ReceivedMint>, rgb_lib::Error> {
+        wallet::RecipientInfo::new(recipient_id.clone())?;
+        let (resp, recv) = oneshot::channel();
+        let cmd = WalletCmd::GetReceivedMint { recipient_id, resp };
+        self.send_cmd(cmd, recv).await
+    }
+
+    pub async fn inspect_psbt(
+        &self,
+        psbt: String,
+    ) -> Result<wallet::PsbtInspection, rgb_lib::Error> {
+        let (resp, recv) = oneshot::channel();
+        let cmd = WalletCmd::InspectPsbt { psbt, resp };
+        self.send_cmd(cmd, recv).await
+    }
+
     pub async fn get_consignment(
         &self,
         req: GetConsignmentReq,
@@ -357,5 +413,30 @@ impl WalletCtx {
         let (resp, recv) = oneshot::channel();
         let cmd = WalletCmd::Stop { resp };
         self.send_cmd(cmd, recv).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn received_mint_rejects_invalid_ids_before_wallet_lookup() {
+        let tasks = TaskTracker::new();
+        let ctx = WalletCtx::new(Config::default(), &tasks);
+        for recipient_id in [
+            "",
+            "invalid",
+            "../../other-wallet/transfers/mint",
+            "/tmp/mint",
+        ] {
+            assert!(matches!(
+                ctx.get_received_mint(recipient_id.into()).await,
+                Err(rgb_lib::Error::InvalidRecipientID)
+            ));
+        }
+        ctx.stop().await.unwrap();
+        tasks.close();
+        tasks.wait().await;
     }
 }
