@@ -61,6 +61,7 @@ impl RgbWalletState {
                 database_type: DatabaseType::Sqlite,
                 max_allocations_per_utxo: max_allocations_per_utxo.unwrap_or(5),
                 supported_schemas: config.supported_schemas()?,
+                allow_reckless_schemas: false,
             },
             SinglesigKeys {
                 account_xpub_colored: xpub_colored,

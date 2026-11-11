@@ -7,6 +7,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Breaking
 
+- BFA asset responses no longer include `initial_supply`; use `known_circulating_supply`.
+- BFA issuance with `linked_from_contract` and link operations validate that the
+  referenced contract is known to the wallet and can be linked.
 - RGB send recipients and receive requests use `assignment` for token amounts
   and rights (`Fungible`, `MintRight`, `LinkRight`) instead of `amount`.
 - Requires `rgb-proxy-server` 0.4.0 or later (proxy protocol v1).
@@ -62,10 +65,10 @@ All notable changes to this project are documented here. The format follows
 - Responses follow the pinned rgb-lib models: `listassets` has a `bfa` group,
   transfers can be `WaitingBroadcast`, allocations can be `MintRight` and
   UTXOs carry `derivation_index`.
-- rgb-lib pinned to `rgb-lib-bfa` tag `v0.3.0-beta.7-upstream-dev-bfa.6`,
+- rgb-lib pinned to `rgb-lib-bfa` tag `v0.3.0-beta.7-upstream-dev-bfa.8`,
   with its exact RGB revisions from public `rgb-protocol` repositories.
 - Docker builds support the private upstream dependencies listed in README.
-- Updated error mapping, EVM chain configuration and transfer queries for bfa.6.
+- Updated error mapping, EVM chain configuration and transfer queries for bfa.8.
 - Transfer responses expose `change_utxos`; BFA assets include `known_circulating_supply`.
 - BFA mint validation reads finalized bridge contract state.
 
