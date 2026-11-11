@@ -71,6 +71,7 @@ pub fn classify(err: &Error) -> ErrorClass {
         | Error::BatchTransferNotFound { .. }
         | Error::MultisigOperationNotFound { .. }
         | Error::UnknownTransfer { .. }
+        | Error::UnknownLinkedContract { .. }
         | Error::NoConsignment
         | Error::NoMedia
         | Error::OperationNotFound => ErrorClass::NotFound,
@@ -127,7 +128,6 @@ pub fn classify(err: &Error) -> ErrorClass {
         | Error::ProxyTxAlreadyReleased
         | Error::RecipientIDAlreadyUsed
         | Error::SignedTxCleared
-        | Error::TransferExpired
         | Error::TransferIDDeleted
         | Error::TransferIDInUse
         | Error::WalletDirAlreadyExists { .. }
@@ -217,6 +217,7 @@ pub fn classify(err: &Error) -> ErrorClass {
         | Error::InvalidFilePath { .. }
         | Error::InvalidFingerprint
         | Error::InvalidIndexer { .. }
+        | Error::InvalidLinkedContract { .. }
         | Error::InvalidMnemonic { .. }
         | Error::InvalidMultisigThreshold { .. }
         | Error::InvalidName { .. }

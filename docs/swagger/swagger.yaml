@@ -1958,6 +1958,7 @@ components:
           default: false
         linked_from_contract:
           type: [string, 'null']
+          description: Known, unlinked contract whose schema supports links.
     MintBeginRequestModel:
       type: object
       required: [asset_id, recipient, before_block]
@@ -2008,6 +2009,7 @@ components:
           type: string
         linked_to_contract:
           type: string
+          description: Known contract issued with linked_from_contract equal to asset_id.
         fee_rate:
           type: integer
           default: 1
@@ -2324,12 +2326,10 @@ components:
         precision:
           type: integer
           title: Precision
-        initial_supply:
-          type: integer
-          title: Initial Supply
         known_circulating_supply:
           type: integer
           title: Known Circulating Supply
+          description: Last observed bridge-accounted supply, including unfinalized locks; an upper bound.
         timestamp:
           type: integer
           title: Timestamp
@@ -2354,7 +2354,6 @@ components:
         - name
         - details
         - precision
-        - initial_supply
         - known_circulating_supply
         - timestamp
         - added_at

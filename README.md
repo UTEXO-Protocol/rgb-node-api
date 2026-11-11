@@ -67,7 +67,7 @@ headers.
 ## API Reference
 
 Swagger UI is available at `/_swagger`; the OpenAPI specification is at
-`/_swagger/swagger.yaml`. The API and signing CLI use rgb-lib `bfa.6`.
+`/_swagger/swagger.yaml`. The API and signing CLI use rgb-lib `bfa.8`.
 
 ### System
 

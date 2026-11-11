@@ -757,6 +757,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                 req.reject_list_url,
                 false,
                 None,
+                false,
             );
             if let Err(err) = &res {
                 log_rgb_err!(err, "issue IFA: wid={id} error={:?}", err);
@@ -775,6 +776,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                 req.reject_list_address,
                 req.link_right,
                 req.linked_from_contract,
+                false,
             );
             if let Err(err) = &res {
                 log_rgb_err!(err, "issue BFA: wid={id} error={:?}", err);
@@ -822,6 +824,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                 req.linked_to_contract,
                 req.fee_rate,
                 req.min_confirmations,
+                false,
                 req.dry_run,
             );
             if let Err(err) = &res {
