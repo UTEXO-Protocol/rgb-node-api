@@ -1,0 +1,156 @@
+name: esplora-adapter
+
+# Checks, wallet end-to-end test and image build for the esplora-adapter crate.
+# Release tags for the image: esplora-adapter-vX.Y.Z
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'esplora-adapter/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'docker-compose.yaml'
+      - 'scripts/docker-git-credential.sh'
+      - '.github/workflows/esplora-adapter.yaml'
+  push:
+    branches: [main]
+    tags:
+      - 'esplora-adapter-v[0-9]+.[0-9]+.[0-9]+'
+      - 'esplora-adapter-v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+'
+    paths:
+      - 'esplora-adapter/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'docker-compose.yaml'
+      - 'scripts/docker-git-credential.sh'
+      - '.github/workflows/esplora-adapter.yaml'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: fmt + clippy + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+          cache: true
+      # The workspace resolves private git dependencies for its other members,
+      # so cargo needs a token even when only this crate is built.
+      - name: Configure git for cargo git deps
+        env:
+          GITHUB_AUTH_TOKEN: ${{ secrets.ORG_REPO_READ_TOKEN != '' && secrets.ORG_REPO_READ_TOKEN || github.token }}
+        run: |
+          git config --global url."https://x-access-token:${GITHUB_AUTH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          git config --global --add url."https://x-access-token:${GITHUB_AUTH_TOKEN}@github.com/".insteadOf "ssh://git@github.com/"
+      - name: cargo fmt --check
+        run: cargo fmt -p esplora-adapter -- --check
+      - name: cargo clippy
+        run: cargo clippy -p esplora-adapter --all-targets -- -D warnings
+      - name: cargo test
+        run: cargo test -p esplora-adapter --all-targets
+
+  e2e:
+    name: wallet e2e (rgb-node-api -> adapter -> electrs)
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: true
+      - name: Configure git for cargo git deps
+        env:
+          GITHUB_AUTH_TOKEN: ${{ secrets.ORG_REPO_READ_TOKEN != '' && secrets.ORG_REPO_READ_TOKEN || github.token }}
+        run: |
+          git config --global url."https://x-access-token:${GITHUB_AUTH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          git config --global --add url."https://x-access-token:${GITHUB_AUTH_TOKEN}@github.com/".insteadOf "ssh://git@github.com/"
+      - name: Start regtest stack (bitcoind, electrs, rgb-proxy)
+        run: |
+          docker compose up -d
+          for port in 18443 50001 3000; do
+            timeout 120 bash -c "until nc -z 127.0.0.1 $port; do sleep 2; done"
+          done
+      - name: Run wallet e2e
+        run: bash esplora-adapter/tests/e2e.sh
+      - name: Stack logs on failure
+        if: failure()
+        run: docker compose logs --tail 100
+      - name: Stop stack
+        if: always()
+        run: docker compose down -v
+
+  docker:
+    name: build + push image
+    needs: [check, e2e]
+    if: >-
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' ||
+       startsWith(github.ref, 'refs/tags/esplora-adapter-v'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check private dependency token
+        env:
+          ORG_REPO_READ_TOKEN: ${{ secrets.ORG_REPO_READ_TOKEN }}
+        run: |
+          if [ -z "$ORG_REPO_READ_TOKEN" ]; then
+            echo "::error::Set ORG_REPO_READ_TOKEN with Contents read access to UTEXO-Protocol/rgb-lib-bfa."
+            exit 1
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # `:main` for branch builds; `:X.Y.Z` + `:X.Y` + `:latest` for
+      # esplora-adapter-vX.Y.Z tags; always the short sha.
+      - name: Image tags & labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/utexo-protocol/esplora-adapter
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=,format=short
+            type=match,pattern=esplora-adapter-v(\d+\.\d+\.\d+.*),group=1
+            type=match,pattern=esplora-adapter-v(\d+\.\d+)\.\d+$,group=1
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/esplora-adapter-v') }}
+
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: esplora-adapter/Dockerfile
+          push: true
+          secrets: |
+            github_token=${{ secrets.ORG_REPO_READ_TOKEN }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=esplora-adapter
+          cache-to: type=gha,mode=max,scope=esplora-adapter

@@ -1769,6 +1769,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "esplora-adapter"
+version = "0.1.0"
+dependencies = [
+ "actix-cors",
+ "actix-web",
+ "anyhow",
+ "clap",
+ "electrum-client",
+ "env_logger",
+ "esplora-client",
+ "hex",
+ "log",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml 0.9.12+spec-1.1.0",
+]
+
+[[package]]
 name = "esplora-client"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

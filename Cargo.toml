@@ -5,7 +5,7 @@ version = "0.2.0"
 default-run = "rgb-node-api"
 
 [workspace]
-members = ["wallet-cli"]
+members = ["wallet-cli", "esplora-adapter"]
 resolver = "3"
 
 # rgb-lib is shared so the server and the signing CLI can never resolve to

@@ -92,3 +92,11 @@ sign:
 send-btc ADDRESS AMOUNT='1.0': miner-wallet
     {{btc-wallet-cli}} sendtoaddress {{ADDRESS}} {{AMOUNT}}
     @just gen-blocks 1 > /dev/null
+
+# Esplora HTTP facade over electrs (for browser clients). Needs `just up` first.
+esplora-adapter:
+    cargo run -p esplora-adapter -- -c esplora-adapter/esplora-adapter.toml.example
+
+# Wallet flows (issue, send, receive) through the adapter. Needs `just up` first.
+e2e:
+    esplora-adapter/tests/e2e.sh
