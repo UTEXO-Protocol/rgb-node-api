@@ -1,0 +1,20 @@
+electrum_address = "tcp://127.0.0.1:50001"
+network = "regtest"
+listen_address = "127.0.0.1"
+port = 3002
+enable_cors = true
+# cors_domain = "https://app.example.com"   # empty = any origin
+
+# Public deployment safeguards (defaults shown)
+# electrum_connections = 4
+# rate_limit_per_sec = 20       # per IP, 0 = off
+# rate_limit_burst = 40
+# trust_forwarded_for = false   # true only behind your own reverse proxy
+# max_concurrent = 64           # more requests in flight get 503
+# request_timeout_secs = 30
+# tx_cache_size = 20000
+
+# Every setting can also come from the environment and wins over this file:
+#   ESPLORA_<FIELD_NAME_UPPERCASE>, e.g. ESPLORA_ELECTRUM_ADDRESS, ESPLORA_NETWORK,
+#   ESPLORA_RATE_LIMIT_PER_SEC=50, ESPLORA_CORS_DOMAIN=https://app.example.com.
+# The file itself is optional if electrum_address and network come from env.

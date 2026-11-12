@@ -1,0 +1,24 @@
+[package]
+edition = "2024"
+name = "esplora-adapter"
+version = "0.1.0"
+description = "HTTP Esplora REST facade over an Electrum (TCP) server, so browsers can use electrs"
+publish = false
+
+[dependencies]
+actix-cors = "0.7.0"
+actix-web = "4.5.1"
+anyhow = "1.0.81"
+clap = { version = "4.5.4", features = ["derive"] }
+electrum-client = "0.25.0"
+env_logger = "0.11.3"
+hex = "0.4.3"
+log = "0.4.21"
+serde = { version = "1.0.197", features = ["derive"] }
+serde_json = "1.0.117"
+tokio = { version = "1", default-features = false, features = ["sync", "time"] }
+toml = "0.9.6"
+
+[dev-dependencies]
+# parse our output with the client rgb-lib uses, so a shape mistake fails a test
+esplora-client = { version = "0.12.3", default-features = false }
