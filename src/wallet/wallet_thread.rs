@@ -47,8 +47,9 @@ pub(crate) enum WalletCmd {
         skip_sync: bool,
         resp: ResultChan<bool>,
     },
-    TransfersByAsset {
-        asset_id: String,
+    TransfersFiltered {
+        asset_id: Option<String>,
+        batch_transfer_idx: Option<i32>,
         resp: ResultChan<Vec<wallet::Transfer>>,
     },
     TransfersByRecipient {
@@ -178,7 +179,7 @@ impl std::fmt::Display for WalletCmd {
             WalletCmd::Assets { .. } => "Assets",
             WalletCmd::Transfers { .. } => "Transfers",
             WalletCmd::FailTransfer { .. } => "FailTransfer",
-            WalletCmd::TransfersByAsset { .. } => "TransfersByAsset",
+            WalletCmd::TransfersFiltered { .. } => "TransfersFiltered",
             WalletCmd::TransfersByRecipient { .. } => "TransfersByRecipient",
             WalletCmd::Transactions { .. } => "Transactions",
             WalletCmd::ListUnspends { .. } => "ListUnspends",
@@ -424,16 +425,30 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                 }
             }
         }
-        WalletCmd::TransfersByAsset { asset_id, resp } => {
-            match wallet_state.lock().unwrap().wallet.list_transfers(
-                wallet::AssetFilter::Id(asset_id.clone()),
-                wallet::TransferScope::All,
-            ) {
+        WalletCmd::TransfersFiltered {
+            asset_id,
+            batch_transfer_idx,
+            resp,
+        } => {
+            let filter = match &asset_id {
+                Some(asset_id) => wallet::AssetFilter::Id(asset_id.clone()),
+                None => wallet::AssetFilter::AnyOrNone,
+            };
+            let scope = match batch_transfer_idx {
+                Some(idx) => wallet::TransferScope::BatchTransfer(idx),
+                None => wallet::TransferScope::All,
+            };
+            match wallet_state
+                .lock()
+                .unwrap()
+                .wallet
+                .list_transfers(filter, scope)
+            {
                 Ok(val) => resp.send(Ok(val)).is_ok(),
                 Err(err) => {
                     log_rgb_err!(
                         err,
-                        "list transfers by asset: wid={id} asset={asset_id} error={:?}",
+                        "list transfers: wid={id} asset={asset_id:?} batch={batch_transfer_idx:?} error={:?}",
                         err
                     );
                     resp.send(Err(err)).is_ok()

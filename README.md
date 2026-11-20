@@ -53,6 +53,12 @@ proxy_address = ["rpc://127.0.0.1:3000/json-rpc"]
 # eth_chain_id = 11155111
 # eth_min_mint_lock_blocks = 2
 # eth_max_mint_lock_blocks = 1000
+# Optional, PRIVATE DEPLOYMENTS ONLY: the server makes keys and signs for
+# /generatekeys, /send and /burn. The mnemonic then reaches the server, so keep
+# the API on a private network (or behind TLS) and never expose it publicly.
+# Callers must send the token in the `x-signing-token` header.
+# allow_server_signing = true
+# server_signing_token = "at-least-16-random-characters"
 ```
 
 For BFA, all four `eth_*` fields are required. Choose the mint lock bounds for
@@ -89,6 +95,10 @@ The begin/end pattern allows clients to sign PSBTs externally:
 |--------|------|-------------|
 | POST | `/register` | Register a read-only wallet |
 | POST | `/decodeinvoice` | Decode an RGB invoice (no wallet headers required) |
+| POST | `/decodergbinvoice` | Alias of `/decodeinvoice` |
+| POST | `/generatekeys` | Make a mnemonic and keys (needs `allow_server_signing` and `x-signing-token`) |
+| POST | `/send` | Send in one call, signed with a `mnemonic` in the body (needs `allow_server_signing` and `x-signing-token`) |
+| POST | `/burn` | Burn in one call, signed with a `mnemonic` in the body (needs `allow_server_signing` and `x-signing-token`) |
 | POST | `/getreceivedmint` | Get a received mint checked by the wallet |
 | POST | `/getassetmetadata` | Get asset metadata |
 | POST | `/inspectpsbt` | Inspect PSBT inputs, outputs, fee and partial signatures |
@@ -98,7 +108,7 @@ The begin/end pattern allows clients to sign PSBTs externally:
 | POST | `/assetbalance` | Get balance for an asset |
 | POST | `/listunspents` | List unspent outputs |
 | POST | `/listtransactions` | List BTC transactions |
-| POST | `/listtransfers` | List RGB transfers for an asset |
+| POST | `/listtransfers` | List RGB transfers; optional `asset_id` and `batch_transfer_idx` filters |
 | POST | `/blindreceive` | Generate RGB invoice (blinded UTXO) |
 | POST | `/witnessreceive` | Generate RGB invoice paid to a new output of the sender's transaction |
 | POST | `/issueassetnia` | Issue new NIA token |

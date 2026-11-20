@@ -1,7 +1,10 @@
+use std::sync::Arc;
+
 use rgb_lib::wallet;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
+use zeroize::Zeroizing;
 
 use super::Config;
 use super::models::*;
@@ -9,12 +12,14 @@ use super::wallet_thread::*;
 
 #[derive(Clone)]
 pub struct WalletCtx {
+    cfg: Arc<Config>,
     id: Option<String>,
     handle: mpsc::Sender<(Option<String>, WalletCmd)>,
 }
 
 impl WalletCtx {
     pub fn new(cfg: Config, tasker: &TaskTracker) -> Self {
+        let cfg_arc = Arc::new(cfg.clone());
         let (wt, tx) = WalletThread::new(cfg);
 
         tasker.spawn_blocking(move || {
@@ -22,6 +27,7 @@ impl WalletCtx {
         });
 
         WalletCtx {
+            cfg: cfg_arc,
             id: None,
             handle: tx,
         }
@@ -132,13 +138,15 @@ impl WalletCtx {
         self.send_cmd(cmd, recv).await
     }
 
-    pub async fn transfers_by_asset(
+    pub async fn transfers_filtered(
         &self,
-        asset_id: &str,
+        asset_id: Option<String>,
+        batch_transfer_idx: Option<i32>,
     ) -> Result<Vec<rgb_lib::wallet::Transfer>, rgb_lib::Error> {
         let (resp, recv) = oneshot::channel();
-        let cmd = WalletCmd::TransfersByAsset {
-            asset_id: asset_id.to_owned(),
+        let cmd = WalletCmd::TransfersFiltered {
+            asset_id,
+            batch_transfer_idx,
             resp,
         };
         self.send_cmd(cmd, recv).await
@@ -395,6 +403,54 @@ impl WalletCtx {
             resp,
         };
         self.send_cmd(cmd, recv).await
+    }
+
+    /// Whether the server may handle mnemonics (`allow_server_signing`).
+    pub fn server_signing_enabled(&self) -> bool {
+        self.cfg.allow_server_signing
+    }
+
+    pub fn signing_token_matches(&self, token: &str) -> bool {
+        self.cfg.signing_token_matches(token)
+    }
+
+    /// New keys, including the mnemonic. Not tied to any wallet.
+    pub fn generate_keys(&self) -> rgb_lib::keys::Keys {
+        super::signer::new_keys(&self.cfg)
+    }
+
+    async fn sign(
+        &self,
+        mnemonic: Zeroizing<String>,
+        psbt: String,
+    ) -> Result<String, rgb_lib::Error> {
+        let cfg = self.cfg.clone();
+        let id = self.id.clone().unwrap_or_default();
+        tokio::task::spawn_blocking(move || super::signer::sign_psbt(&cfg, &mnemonic, &id, psbt))
+            .await
+            .map_err(|_| err_dead_thread())?
+    }
+
+    /// `send_begin`, sign and `send_end` in one call.
+    pub async fn send_signed(
+        &self,
+        req: SendBeginReq,
+        mnemonic: Zeroizing<String>,
+    ) -> Result<wallet::OperationResult, rgb_lib::Error> {
+        let psbt = self.send_begin(req).await?;
+        let signed = self.sign(mnemonic, psbt).await?;
+        self.send_end(signed).await
+    }
+
+    /// `burn_begin`, sign and `burn_end` in one call.
+    pub async fn burn_signed(
+        &self,
+        req: BurnBeginReq,
+        mnemonic: Zeroizing<String>,
+    ) -> Result<wallet::OperationResult, rgb_lib::Error> {
+        let psbt = self.burn_begin(req).await?;
+        let signed = self.sign(mnemonic, psbt).await?;
+        self.burn_end(signed).await
     }
 
     pub async fn refresh_wallet(&self) -> Result<(), rgb_lib::Error> {
