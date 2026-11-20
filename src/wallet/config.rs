@@ -24,9 +24,43 @@ pub struct Config {
     pub eth_max_mint_lock_blocks: Option<u64>,
     #[serde(default)]
     pub bfa_enabled: bool,
+    /// Allow `/wallet/generatekeys`, `/wallet/send` and `/wallet/burn`. They
+    /// handle a mnemonic on the server, so they are off by default.
+    #[serde(default)]
+    pub allow_server_signing: bool,
+    /// Shared secret that callers of the signing endpoints send in the
+    /// `x-signing-token` header. Required (16+ characters) when
+    /// `allow_server_signing` is set.
+    #[serde(default)]
+    pub server_signing_token: Option<String>,
 }
 
 impl Config {
+    /// Check the server-signing settings. Call once at startup.
+    pub fn check_server_signing(&self) -> Result<(), String> {
+        if !self.allow_server_signing {
+            return Ok(());
+        }
+        match self.server_signing_token.as_deref() {
+            Some(t) if t.len() >= 16 => Ok(()),
+            _ => Err("allow_server_signing needs server_signing_token (16+ characters)".into()),
+        }
+    }
+
+    /// True when `token` is the configured signing token.
+    pub fn signing_token_matches(&self, token: &str) -> bool {
+        let Some(expected) = self.server_signing_token.as_deref() else {
+            return false;
+        };
+        // Constant time: compare every byte, whatever the first difference.
+        let (a, b) = (expected.as_bytes(), token.as_bytes());
+        let mut diff = a.len() ^ b.len();
+        for (i, x) in a.iter().enumerate() {
+            diff |= usize::from(x ^ b.get(i).copied().unwrap_or(0));
+        }
+        diff == 0
+    }
+
     pub fn supported_schemas(&self) -> Result<Vec<AssetSchema>, rgb_lib::Error> {
         let mut schemas = vec![AssetSchema::Nia];
         if self.bfa_enabled {

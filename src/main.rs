@@ -33,6 +33,14 @@ async fn main() -> anyhow::Result<()> {
     // Fail fast on a BFA opt-in without an EVM RPC, instead of on the first
     // wallet registration.
     cfg.wallet.supported_schemas()?;
+    cfg.wallet
+        .check_server_signing()
+        .map_err(anyhow::Error::msg)?;
+    if cfg.wallet.allow_server_signing {
+        log::warn!(
+            "server-side signing is ON: /wallet/generatekeys, /send and /burn handle mnemonics. Private networks only."
+        );
+    }
 
     let tasker = TaskTracker::new();
     let cancel = CancellationToken::new();

@@ -40,6 +40,12 @@ impl ApiService for WalletSrv {
             .service(
                 scope("/wallet")
                     .service(resource("/decodeinvoice").route(post().to(node_api::decode_invoice)))
+                    .service(
+                        resource("/decodergbinvoice").route(post().to(node_api::decode_invoice)),
+                    )
+                    .service(resource("/generatekeys").route(post().to(node_api::generate_keys)))
+                    .service(resource("/send").route(post().to(node_api::send)))
+                    .service(resource("/burn").route(post().to(node_api::burn)))
                     .service(resource("/register").route(post().to(node_api::register)))
                     .service(resource("/listunspents").route(post().to(node_api::list_unspents)))
                     .service(
@@ -175,6 +181,67 @@ mod tests {
                 "unknown_query_params": {"order": "test"}
             })
         );
+        ctx.stop().await.unwrap();
+        tasks.close();
+        tasks.wait().await;
+    }
+
+    #[actix_web::test]
+    async fn signing_shortcuts_are_off_by_default() {
+        let tasks = TaskTracker::new();
+        let ctx = WalletCtx::new(Config::default(), &tasks);
+        let app =
+            test::init_service(App::new().service(WalletSrv { ctx: ctx.clone() }.service())).await;
+        for path in ["/wallet/generatekeys", "/wallet/send", "/wallet/burn"] {
+            let req = test::TestRequest::post()
+                .uri(path)
+                .insert_header(("xpub-van", "x"))
+                .insert_header(("xpub-col", "x"))
+                .insert_header(("master-fingerprint", "x"))
+                .set_json(
+                    json!({"mnemonic": "x", "asset_id": "x", "amount": 1, "recipient_map": {}}),
+                )
+                .to_request();
+            let res = test::call_service(&app, req).await;
+            assert_eq!(res.status(), StatusCode::FORBIDDEN, "{path}");
+        }
+        ctx.stop().await.unwrap();
+        tasks.close();
+        tasks.wait().await;
+    }
+
+    #[actix_web::test]
+    async fn generate_keys_when_enabled() {
+        let tasks = TaskTracker::new();
+        let cfg = Config {
+            allow_server_signing: true,
+            server_signing_token: Some("0123456789abcdef".into()),
+            network: "regtest".into(),
+            ..Config::default()
+        };
+        let ctx = WalletCtx::new(cfg, &tasks);
+        let app =
+            test::init_service(App::new().service(WalletSrv { ctx: ctx.clone() }.service())).await;
+        let no_token = test::TestRequest::post()
+            .uri("/wallet/generatekeys")
+            .to_request();
+        let res = test::call_service(&app, no_token).await;
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+        let bad_token = test::TestRequest::post()
+            .uri("/wallet/generatekeys")
+            .insert_header(("x-signing-token", "0123456789abcdeX"))
+            .to_request();
+        let res = test::call_service(&app, bad_token).await;
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+        let req = test::TestRequest::post()
+            .uri("/wallet/generatekeys")
+            .insert_header(("x-signing-token", "0123456789abcdef"))
+            .to_request();
+        let res = test::call_service(&app, req).await;
+        assert_eq!(res.status(), StatusCode::OK);
+        let body: Value = test::read_body_json(res).await;
+        assert_eq!(body["mnemonic"].as_str().unwrap().split(' ').count(), 12);
+        assert!(body["master_fingerprint"].is_string());
         ctx.stop().await.unwrap();
         tasks.close();
         tasks.wait().await;

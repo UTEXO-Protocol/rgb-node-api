@@ -119,6 +119,44 @@ pub async fn decode_invoice(
     Ok(Json(invoice.invoice_data()))
 }
 
+/// The shortcut endpoints sign on the server, so they need the wallet's mnemonic.
+#[derive(serde::Deserialize)]
+///
+/// No `Debug`, so it cannot end up in a log line by accident. The mnemonic is
+/// wiped from memory when dropped.
+pub struct WithMnemonic<T> {
+    pub mnemonic: zeroize::Zeroizing<String>,
+    #[serde(flatten)]
+    pub req: T,
+}
+
+const HEADER_SIGNING_TOKEN: &str = "x-signing-token";
+
+/// The signing endpoints are for private deployments: they need the switch on
+/// and the shared secret in `x-signing-token`.
+fn require_server_signing(ctx: &WalletCtx, http: &actix_web::HttpRequest) -> Result<(), ApiError> {
+    if !ctx.server_signing_enabled() {
+        return Err(error_with(
+            StatusCode::FORBIDDEN,
+            ApiErrorCode::AccessDenied,
+            "server-side signing is disabled (set allow_server_signing)",
+        ));
+    }
+    let token = http
+        .headers()
+        .get(HEADER_SIGNING_TOKEN)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default();
+    if !ctx.signing_token_matches(token) {
+        return Err(error_with(
+            StatusCode::UNAUTHORIZED,
+            ApiErrorCode::AccessDenied,
+            "missing or wrong x-signing-token header",
+        ));
+    }
+    Ok(())
+}
+
 #[derive(serde::Serialize)]
 pub struct RegisterRes {
     pub address: String,
@@ -135,6 +173,16 @@ pub struct AssetBalanceReq {
     /// `assetId` is the pre-unification spelling, accepted for compatibility.
     #[serde(alias = "assetId")]
     pub asset_id: String,
+}
+
+/// Both filters are optional. With neither, every transfer is listed.
+#[derive(serde::Deserialize)]
+pub struct ListTransfersReq {
+    #[serde(default)]
+    pub asset_id: Option<String>,
+    /// Only the transfers of this batch transfer.
+    #[serde(default)]
+    pub batch_transfer_idx: Option<i32>,
 }
 
 #[derive(serde::Deserialize)]
@@ -265,12 +313,12 @@ pub async fn list_assets(
 pub async fn list_transfers(
     ctx: Data<WalletCtx>,
     wallet_key: XWalletKey,
-    req: Json<AssetId>,
+    req: Json<ListTransfersReq>,
 ) -> Result<Json<Vec<rgb_lib::wallet::Transfer>>, ApiError> {
     let ctx = derive_wctx(&ctx, wallet_key).await?;
 
     let list = ctx
-        .transfers_by_asset(&req.asset_id)
+        .transfers_filtered(req.asset_id.clone(), req.batch_transfer_idx)
         .await
         .map_err(map_rgb_error)?;
     Ok(Json(list))
@@ -473,6 +521,55 @@ pub async fn burn_end(
     let ctx = derive_wctx(&ctx, wallet_key).await?;
     let res = ctx
         .burn_end(req.signed_psbt.clone())
+        .await
+        .map_err(map_rgb_error)?;
+    Ok(Json(SendResult {
+        txid: res.txid,
+        batch_transfer_idx: res.batch_transfer_idx,
+    }))
+}
+
+/// Make a new mnemonic and the registration headers for it.
+pub async fn generate_keys(
+    ctx: Data<WalletCtx>,
+    http: actix_web::HttpRequest,
+) -> Result<Json<rgb_lib::keys::Keys>, ApiError> {
+    require_server_signing(&ctx, &http)?;
+    Ok(Json(ctx.generate_keys()))
+}
+
+/// Send assets in one call: begin, sign with `mnemonic`, end.
+pub async fn send(
+    ctx: Data<WalletCtx>,
+    http: actix_web::HttpRequest,
+    wallet_key: XWalletKey,
+    req: Json<WithMnemonic<SendBeginReq>>,
+) -> Result<Json<SendResult>, ApiError> {
+    require_server_signing(&ctx, &http)?;
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    let WithMnemonic { mnemonic, req } = req.0;
+    let res = ctx
+        .send_signed(req, mnemonic)
+        .await
+        .map_err(map_rgb_error)?;
+    Ok(Json(SendResult {
+        txid: res.txid,
+        batch_transfer_idx: res.batch_transfer_idx,
+    }))
+}
+
+/// Burn assets in one call: begin, sign with `mnemonic`, end.
+pub async fn burn(
+    ctx: Data<WalletCtx>,
+    http: actix_web::HttpRequest,
+    wallet_key: XWalletKey,
+    req: Json<WithMnemonic<BurnBeginReq>>,
+) -> Result<Json<SendResult>, ApiError> {
+    require_server_signing(&ctx, &http)?;
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    let WithMnemonic { mnemonic, req } = req.0;
+    let res = ctx
+        .burn_signed(req, mnemonic)
         .await
         .map_err(map_rgb_error)?;
     Ok(Json(SendResult {

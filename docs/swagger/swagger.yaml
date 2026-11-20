@@ -48,6 +48,27 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+  /wallet/decodergbinvoice:
+    post:
+      summary: Decode RGB Invoice
+      description: Same as `/wallet/decodeinvoice`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecodeInvoiceReq'
+      responses:
+        '200':
+          description: Decoded invoice
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceData'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
   /wallet/register:
     post:
       summary: Register Wallet
@@ -1293,6 +1314,135 @@ paths:
           $ref: '#/components/responses/InternalError'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
+  /wallet/generatekeys:
+    post:
+      summary: Generate Keys
+      description: >-
+        Make a new mnemonic and its registration headers. Only when the server
+        sets `allow_server_signing`; otherwise 403. Nothing is stored.
+      parameters:
+        - name: x-signing-token
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The new keys, including the mnemonic.
+          content:
+            application/json:
+              schema:
+                type: object
+        '403':
+          description: Server-side signing is disabled.
+  /wallet/send:
+    post:
+      summary: Send
+      description: >-
+        Begin, sign with the mnemonic and end a send in one call. Private deployments only. Needs `allow_server_signing` (else 403) and the `x-signing-token` header (else 401). Same body as `/wallet/sendbegin` plus `mnemonic`.
+      parameters:
+        - name: x-signing-token
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/SendAssetBeginRequestModel'
+                - type: object
+                  required: [mnemonic]
+                  properties:
+                    mnemonic:
+                      type: string
+                      description: BIP39 mnemonic of the wallet named in the headers.
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Server-side signing is disabled.
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+  /wallet/burn:
+    post:
+      summary: Burn
+      description: >-
+        Begin, sign with the mnemonic and end a burn in one call. Private deployments only. Needs `allow_server_signing` (else 403) and the `x-signing-token` header (else 401). Same body as `/wallet/burnbegin` plus `mnemonic`.
+      parameters:
+        - name: x-signing-token
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/BurnBeginRequestModel'
+                - type: object
+                  required: [mnemonic]
+                  properties:
+                    mnemonic:
+                      type: string
+                      description: BIP39 mnemonic of the wallet named in the headers.
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Server-side signing is disabled.
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
   /wallet/getconsignment:
     post:
       summary: Get Consignment
@@ -2877,11 +3027,15 @@ components:
         asset_id:
           type: string
           title: Asset Id
+          description: Only transfers of this asset.
+        batch_transfer_idx:
+          type: integer
+          format: int32
+          title: Batch Transfer Idx
+          description: Only transfers of this batch transfer. An unknown index returns 404.
       type: object
-      required:
-        - asset_id
       title: ListTransfersRequestModel
-      description: Request model for listing asset transfers.
+      description: Both filters are optional. With neither, every transfer is listed.
     Media:
       properties:
         file_path:
