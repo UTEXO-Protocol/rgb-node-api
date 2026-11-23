@@ -1318,8 +1318,11 @@ paths:
     post:
       summary: Generate Keys
       description: >-
-        Make a new mnemonic and its registration headers. Only when the server
-        sets `allow_server_signing`; otherwise 403. Nothing is stored.
+        Make a new mnemonic and its registration headers. Only in a build with
+        the `server-signing` feature (otherwise this route returns 404). The
+        server must also set `allow_server_signing` (otherwise 403). Needs the
+        `x-signing-token` header (otherwise 401). Nothing is stored. The
+        response has `Cache-Control: no-store`.
       parameters:
         - name: x-signing-token
           in: header
@@ -1339,7 +1342,7 @@ paths:
     post:
       summary: Send
       description: >-
-        Begin, sign with the mnemonic and end a send in one call. Private deployments only. Needs `allow_server_signing` (else 403) and the `x-signing-token` header (else 401). Same body as `/wallet/sendbegin` plus `mnemonic`.
+        Begin, sign with the mnemonic and end a send in one call. Private deployments only. Only in a build with the `server-signing` feature (otherwise this route returns 404). Needs `allow_server_signing` (else 403) and the `x-signing-token` header (else 401). Same body as `/wallet/sendbegin` plus `mnemonic`. A wrong mnemonic is refused before anything starts. If signing fails, the started transfer is failed.
       parameters:
         - name: x-signing-token
           in: header
@@ -1393,7 +1396,7 @@ paths:
     post:
       summary: Burn
       description: >-
-        Begin, sign with the mnemonic and end a burn in one call. Private deployments only. Needs `allow_server_signing` (else 403) and the `x-signing-token` header (else 401). Same body as `/wallet/burnbegin` plus `mnemonic`.
+        Begin, sign with the mnemonic and end a burn in one call. Private deployments only. Only in a build with the `server-signing` feature (otherwise this route returns 404). Needs `allow_server_signing` (else 403) and the `x-signing-token` header (else 401). Same body as `/wallet/burnbegin` plus `mnemonic`. A wrong mnemonic is refused before anything starts. If signing fails, the started transfer is failed.
       parameters:
         - name: x-signing-token
           in: header
