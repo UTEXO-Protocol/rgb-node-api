@@ -38,14 +38,11 @@ impl ApiService for WalletSrv {
             // remove this in future
             .service(resource("/blindreceive").route(post().to(node_api::blind_receive)))
             .service(
-                scope("/wallet")
+                signing_routes(scope("/wallet"))
                     .service(resource("/decodeinvoice").route(post().to(node_api::decode_invoice)))
                     .service(
                         resource("/decodergbinvoice").route(post().to(node_api::decode_invoice)),
                     )
-                    .service(resource("/generatekeys").route(post().to(node_api::generate_keys)))
-                    .service(resource("/send").route(post().to(node_api::send)))
-                    .service(resource("/burn").route(post().to(node_api::burn)))
                     .service(resource("/register").route(post().to(node_api::register)))
                     .service(resource("/listunspents").route(post().to(node_api::list_unspents)))
                     .service(
@@ -139,6 +136,20 @@ fn get_app_info() -> AppInfo {
     }
 }
 
+#[cfg(feature = "server-signing")]
+/// Routes that handle a mnemonic. Only built with the `server-signing` feature.
+fn signing_routes(wallet: actix_web::Scope) -> actix_web::Scope {
+    wallet
+        .service(resource("/generatekeys").route(post().to(node_api::generate_keys)))
+        .service(resource("/send").route(post().to(node_api::send)))
+        .service(resource("/burn").route(post().to(node_api::burn)))
+}
+
+#[cfg(not(feature = "server-signing"))]
+fn signing_routes(wallet: actix_web::Scope) -> actix_web::Scope {
+    wallet
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -186,6 +197,7 @@ mod tests {
         tasks.wait().await;
     }
 
+    #[cfg(feature = "server-signing")]
     #[actix_web::test]
     async fn signing_shortcuts_are_off_by_default() {
         let tasks = TaskTracker::new();
@@ -210,6 +222,52 @@ mod tests {
         tasks.wait().await;
     }
 
+    /// The signing check must run before headers and body are read.
+    #[cfg(feature = "server-signing")]
+    #[actix_web::test]
+    async fn signing_gate_runs_before_parsing() {
+        let tasks = TaskTracker::new();
+        let ctx = WalletCtx::new(Config::default(), &tasks);
+        let app =
+            test::init_service(App::new().service(WalletSrv { ctx: ctx.clone() }.service())).await;
+        for path in ["/wallet/send", "/wallet/burn"] {
+            let req = test::TestRequest::post()
+                .uri(path)
+                .set_payload("not json")
+                .to_request();
+            let res = test::call_service(&app, req).await;
+            assert_eq!(res.status(), StatusCode::FORBIDDEN, "{path}");
+        }
+        ctx.stop().await.unwrap();
+        tasks.close();
+        tasks.wait().await;
+    }
+
+    #[actix_web::test]
+    async fn list_transfers_rejects_unknown_fields() {
+        let tasks = TaskTracker::new();
+        let ctx = WalletCtx::new(Config::default(), &tasks);
+        let app = test::init_service(
+            App::new()
+                .app_data(JsonConfig::default().error_handler(|err, _| ApiError::from(err).into()))
+                .service(WalletSrv { ctx: ctx.clone() }.service()),
+        )
+        .await;
+        let req = test::TestRequest::post()
+            .uri("/wallet/listtransfers")
+            .insert_header(("xpub-van", "x"))
+            .insert_header(("xpub-col", "x"))
+            .insert_header(("master-fingerprint", "x"))
+            .set_json(json!({"assetid": "typo"}))
+            .to_request();
+        let res = test::call_service(&app, req).await;
+        assert!(res.status().is_client_error(), "{}", res.status());
+        ctx.stop().await.unwrap();
+        tasks.close();
+        tasks.wait().await;
+    }
+
+    #[cfg(feature = "server-signing")]
     #[actix_web::test]
     async fn generate_keys_when_enabled() {
         let tasks = TaskTracker::new();
@@ -239,6 +297,11 @@ mod tests {
             .to_request();
         let res = test::call_service(&app, req).await;
         assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(
+            res.headers().get("cache-control").unwrap(),
+            "no-store",
+            "the response holds a mnemonic"
+        );
         let body: Value = test::read_body_json(res).await;
         assert_eq!(body["mnemonic"].as_str().unwrap().split(' ').count(), 12);
         assert!(body["master_fingerprint"].is_string());

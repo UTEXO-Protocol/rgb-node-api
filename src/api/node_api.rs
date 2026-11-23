@@ -17,28 +17,14 @@ pub struct XWalletKey {
     master_fingerprint: String,
 }
 
-impl FromRequest for XWalletKey {
-    type Error = actix_web::Error;
-    type Future = Ready<Result<Self, Self::Error>>;
-
-    fn from_request(
-        req: &actix_web::HttpRequest,
-        _payload: &mut actix_web::dev::Payload,
-    ) -> Self::Future {
-        let xpub_van = req
-            .headers()
-            .get(HEADER_XPUB_VAN)
-            .and_then(|v| v.to_str().ok());
-        let xpub_col = req
-            .headers()
-            .get(HEADER_XPUB_COL)
-            .and_then(|v| v.to_str().ok());
-        let mf = req
-            .headers()
-            .get(HEADER_MASTER_FINGERPRINT)
-            .and_then(|v| v.to_str().ok());
-
-        let v = match (xpub_col, xpub_van, mf) {
+impl XWalletKey {
+    fn from_headers(req: &actix_web::HttpRequest) -> Result<Self, ApiError> {
+        let header = |name: &str| req.headers().get(name).and_then(|v| v.to_str().ok());
+        match (
+            header(HEADER_XPUB_COL),
+            header(HEADER_XPUB_VAN),
+            header(HEADER_MASTER_FINGERPRINT),
+        ) {
             (Some(col), Some(van), Some(mf)) => Ok(XWalletKey {
                 xpub_col: col.to_string(),
                 xpub_van: van.to_string(),
@@ -49,11 +35,20 @@ impl FromRequest for XWalletKey {
                 StatusCode::UNAUTHORIZED,
                 ApiErrorCode::AccessDenied,
                 "missing xpub-van/xpub-col/master-fingerprint header",
-            )
-            .into()),
-        };
+            )),
+        }
+    }
+}
 
-        ready(v)
+impl FromRequest for XWalletKey {
+    type Error = actix_web::Error;
+    type Future = Ready<Result<Self, Self::Error>>;
+
+    fn from_request(
+        req: &actix_web::HttpRequest,
+        _payload: &mut actix_web::dev::Payload,
+    ) -> Self::Future {
+        ready(Self::from_headers(req).map_err(Into::into))
     }
 }
 
@@ -119,19 +114,52 @@ pub async fn decode_invoice(
     Ok(Json(invoice.invoice_data()))
 }
 
-/// The shortcut endpoints sign on the server, so they need the wallet's mnemonic.
-#[derive(serde::Deserialize)]
+#[cfg(feature = "server-signing")]
+/// Only the mnemonic of a signing request. Other fields are ignored here.
 ///
-/// No `Debug`, so it cannot end up in a log line by accident. The mnemonic is
-/// wiped from memory when dropped.
+/// No `Debug`, so it cannot end up in a log line by accident. The final copy of
+/// the mnemonic is wiped when dropped. Earlier copies (the network buffer, the
+/// parser) are not wiped, so this lowers the risk and does not remove it.
+#[derive(serde::Deserialize)]
+struct MnemonicField {
+    mnemonic: zeroize::Zeroizing<String>,
+}
+
+#[cfg(feature = "server-signing")]
+/// The shortcut endpoints sign on the server, so their body holds the wallet's
+/// mnemonic next to the normal request fields.
 pub struct WithMnemonic<T> {
     pub mnemonic: zeroize::Zeroizing<String>,
-    #[serde(flatten)]
     pub req: T,
 }
 
+#[cfg(feature = "server-signing")]
+/// Biggest body a signing endpoint reads.
+const MAX_SIGNING_BODY: usize = 256 * 1024;
+
+#[cfg(feature = "server-signing")]
+/// Read the body only after the signing checks passed, and parse it twice
+/// (no `flatten`, so serde makes no extra buffer of the mnemonic).
+async fn read_with_mnemonic<T: serde::de::DeserializeOwned>(
+    payload: actix_web::web::Payload,
+) -> Result<WithMnemonic<T>, ApiError> {
+    let bad = |msg: String| error_with(StatusCode::BAD_REQUEST, ApiErrorCode::BadInput, &msg);
+    let body = payload
+        .to_bytes_limited(MAX_SIGNING_BODY)
+        .await
+        .map_err(|_| bad("request body too large".into()))?
+        .map_err(|_| bad("cannot read request body".into()))?;
+    let body = zeroize::Zeroizing::new(body.to_vec());
+    let MnemonicField { mnemonic } = serde_json::from_slice(&body)
+        .map_err(|_| bad("body needs a string field: mnemonic".into()))?;
+    let req = serde_json::from_slice(&body).map_err(|e| bad(format!("invalid body: {e}")))?;
+    Ok(WithMnemonic { mnemonic, req })
+}
+
+#[cfg(feature = "server-signing")]
 const HEADER_SIGNING_TOKEN: &str = "x-signing-token";
 
+#[cfg(feature = "server-signing")]
 /// The signing endpoints are for private deployments: they need the switch on
 /// and the shared secret in `x-signing-token`.
 fn require_server_signing(ctx: &WalletCtx, http: &actix_web::HttpRequest) -> Result<(), ApiError> {
@@ -175,8 +203,11 @@ pub struct AssetBalanceReq {
     pub asset_id: String,
 }
 
-/// Both filters are optional. With neither, every transfer is listed.
+/// Both filters are optional. With neither, every transfer is listed. With
+/// both, a transfer must match both. Unknown fields are an error, so a typo
+/// does not silently list everything.
 #[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ListTransfersReq {
     #[serde(default)]
     pub asset_id: Option<String>,
@@ -529,25 +560,31 @@ pub async fn burn_end(
     }))
 }
 
+#[cfg(feature = "server-signing")]
 /// Make a new mnemonic and the registration headers for it.
 pub async fn generate_keys(
     ctx: Data<WalletCtx>,
     http: actix_web::HttpRequest,
-) -> Result<Json<rgb_lib::keys::Keys>, ApiError> {
+) -> Result<actix_web::HttpResponse, ApiError> {
     require_server_signing(&ctx, &http)?;
-    Ok(Json(ctx.generate_keys()))
+    // The body holds a mnemonic: no cache may keep it.
+    Ok(actix_web::HttpResponse::Ok()
+        .insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
+        .json(ctx.generate_keys()))
 }
 
+#[cfg(feature = "server-signing")]
 /// Send assets in one call: begin, sign with `mnemonic`, end.
 pub async fn send(
     ctx: Data<WalletCtx>,
     http: actix_web::HttpRequest,
-    wallet_key: XWalletKey,
-    req: Json<WithMnemonic<SendBeginReq>>,
+    payload: actix_web::web::Payload,
 ) -> Result<Json<SendResult>, ApiError> {
+    // Check first, so a refused caller never makes the server read a mnemonic.
     require_server_signing(&ctx, &http)?;
+    let wallet_key = XWalletKey::from_headers(&http)?;
+    let WithMnemonic { mnemonic, req } = read_with_mnemonic::<SendBeginReq>(payload).await?;
     let ctx = derive_wctx(&ctx, wallet_key).await?;
-    let WithMnemonic { mnemonic, req } = req.0;
     let res = ctx
         .send_signed(req, mnemonic)
         .await
@@ -558,16 +595,18 @@ pub async fn send(
     }))
 }
 
+#[cfg(feature = "server-signing")]
 /// Burn assets in one call: begin, sign with `mnemonic`, end.
 pub async fn burn(
     ctx: Data<WalletCtx>,
     http: actix_web::HttpRequest,
-    wallet_key: XWalletKey,
-    req: Json<WithMnemonic<BurnBeginReq>>,
+    payload: actix_web::web::Payload,
 ) -> Result<Json<SendResult>, ApiError> {
+    // Check first, so a refused caller never makes the server read a mnemonic.
     require_server_signing(&ctx, &http)?;
+    let wallet_key = XWalletKey::from_headers(&http)?;
+    let WithMnemonic { mnemonic, req } = read_with_mnemonic::<BurnBeginReq>(payload).await?;
     let ctx = derive_wctx(&ctx, wallet_key).await?;
-    let WithMnemonic { mnemonic, req } = req.0;
     let res = ctx
         .burn_signed(req, mnemonic)
         .await

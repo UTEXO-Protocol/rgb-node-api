@@ -53,8 +53,9 @@ proxy_address = ["rpc://127.0.0.1:3000/json-rpc"]
 # eth_chain_id = 11155111
 # eth_min_mint_lock_blocks = 2
 # eth_max_mint_lock_blocks = 1000
-# Optional, PRIVATE DEPLOYMENTS ONLY: the server makes keys and signs for
-# /generatekeys, /send and /burn. The mnemonic then reaches the server, so keep
+# Optional, PRIVATE DEPLOYMENTS ONLY. Needs a build with
+# `cargo build --features server-signing` (not in the default build).
+# The server then makes keys and signs for /generatekeys, /send and /burn. The mnemonic then reaches the server, so keep
 # the API on a private network (or behind TLS) and never expose it publicly.
 # Callers must send the token in the `x-signing-token` header.
 # allow_server_signing = true

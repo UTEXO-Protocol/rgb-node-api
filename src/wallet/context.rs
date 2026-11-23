@@ -4,6 +4,7 @@ use rgb_lib::wallet;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
+#[cfg(feature = "server-signing")]
 use zeroize::Zeroizing;
 
 use super::Config;
@@ -12,6 +13,7 @@ use super::wallet_thread::*;
 
 #[derive(Clone)]
 pub struct WalletCtx {
+    #[cfg_attr(not(feature = "server-signing"), allow(dead_code))]
     cfg: Arc<Config>,
     id: Option<String>,
     handle: mpsc::Sender<(Option<String>, WalletCmd)>,
@@ -404,7 +406,10 @@ impl WalletCtx {
         };
         self.send_cmd(cmd, recv).await
     }
+}
 
+#[cfg(feature = "server-signing")]
+impl WalletCtx {
     /// Whether the server may handle mnemonics (`allow_server_signing`).
     pub fn server_signing_enabled(&self) -> bool {
         self.cfg.allow_server_signing
@@ -431,15 +436,59 @@ impl WalletCtx {
             .map_err(|_| err_dead_thread())?
     }
 
+    /// Check the mnemonic against this wallet, before anything is started.
+    async fn check_mnemonic(&self, mnemonic: &Zeroizing<String>) -> Result<(), rgb_lib::Error> {
+        let cfg = self.cfg.clone();
+        let id = self.id.clone().unwrap_or_default();
+        let mnemonic = mnemonic.clone();
+        tokio::task::spawn_blocking(move || super::signer::check_mnemonic(&cfg, &mnemonic, &id))
+            .await
+            .map_err(|_| err_dead_thread())?
+    }
+
+    /// Highest batch transfer index now, or 0 when there is none.
+    async fn max_batch_idx(&self) -> Result<i32, rgb_lib::Error> {
+        let all = self.transfers_filtered(None, None).await?;
+        Ok(all.iter().map(|t| t.batch_transfer_idx).max().unwrap_or(0))
+    }
+
+    /// Fail the transfers that a `*_begin` made after `before_idx`, so a failed
+    /// signing step does not keep UTXOs reserved. Best effort.
+    async fn release_started(&self, before_idx: i32) {
+        let Ok(all) = self.transfers_filtered(None, None).await else {
+            return;
+        };
+        let mut idxs: Vec<i32> = all
+            .iter()
+            .filter(|t| {
+                t.batch_transfer_idx > before_idx
+                    && t.status == rgb_lib::TransferStatus::WaitingCounterparty
+            })
+            .map(|t| t.batch_transfer_idx)
+            .collect();
+        idxs.sort_unstable();
+        idxs.dedup();
+        for idx in idxs {
+            let _ = self.fail_transfer(Some(idx), false, true).await;
+        }
+    }
+
     /// `send_begin`, sign and `send_end` in one call.
     pub async fn send_signed(
         &self,
         req: SendBeginReq,
         mnemonic: Zeroizing<String>,
     ) -> Result<wallet::OperationResult, rgb_lib::Error> {
+        self.check_mnemonic(&mnemonic).await?;
+        let before = self.max_batch_idx().await?;
         let psbt = self.send_begin(req).await?;
-        let signed = self.sign(mnemonic, psbt).await?;
-        self.send_end(signed).await
+        match self.sign(mnemonic, psbt).await {
+            Ok(signed) => self.send_end(signed).await,
+            Err(err) => {
+                self.release_started(before).await;
+                Err(err)
+            }
+        }
     }
 
     /// `burn_begin`, sign and `burn_end` in one call.
@@ -448,11 +497,20 @@ impl WalletCtx {
         req: BurnBeginReq,
         mnemonic: Zeroizing<String>,
     ) -> Result<wallet::OperationResult, rgb_lib::Error> {
+        self.check_mnemonic(&mnemonic).await?;
+        let before = self.max_batch_idx().await?;
         let psbt = self.burn_begin(req).await?;
-        let signed = self.sign(mnemonic, psbt).await?;
-        self.burn_end(signed).await
+        match self.sign(mnemonic, psbt).await {
+            Ok(signed) => self.burn_end(signed).await,
+            Err(err) => {
+                self.release_started(before).await;
+                Err(err)
+            }
+        }
     }
+}
 
+impl WalletCtx {
     pub async fn refresh_wallet(&self) -> Result<(), rgb_lib::Error> {
         let (resp, recv) = oneshot::channel();
         let cmd = WalletCmd::RefreshWallet { resp };

@@ -63,6 +63,8 @@ jobs:
         run: cargo check --all-targets
       - name: cargo test
         run: cargo test --all-targets
+      - name: cargo test (server-signing)
+        run: cargo test --all-targets --features server-signing
       - name: Test Docker Git credentials
         run: python3 -m unittest discover -s scripts -p 'test_*.py'
 

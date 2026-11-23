@@ -4,6 +4,23 @@ use serde_valid::toml::FromTomlStr;
 use std::collections::HashMap;
 use std::path::Path;
 
+/// A secret that prints as `<redacted>`, so it cannot reach a log by accident.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(transparent)]
+pub struct SecretString(pub String);
+
+impl std::fmt::Debug for SecretString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("<redacted>")
+    }
+}
+
+impl From<&str> for SecretString {
+    fn from(s: &str) -> Self {
+        Self(s.to_owned())
+    }
+}
+
 #[derive(Serialize, Deserialize, Default, Clone, Debug, serde_valid::Validate)]
 pub struct Config {
     pub alias: Option<String>,
@@ -32,7 +49,7 @@ pub struct Config {
     /// `x-signing-token` header. Required (16+ characters) when
     /// `allow_server_signing` is set.
     #[serde(default)]
-    pub server_signing_token: Option<String>,
+    pub server_signing_token: Option<SecretString>,
 }
 
 impl Config {
@@ -41,7 +58,7 @@ impl Config {
         if !self.allow_server_signing {
             return Ok(());
         }
-        match self.server_signing_token.as_deref() {
+        match self.server_signing_token.as_ref().map(|t| t.0.as_str()) {
             Some(t) if t.len() >= 16 => Ok(()),
             _ => Err("allow_server_signing needs server_signing_token (16+ characters)".into()),
         }
@@ -49,7 +66,7 @@ impl Config {
 
     /// True when `token` is the configured signing token.
     pub fn signing_token_matches(&self, token: &str) -> bool {
-        let Some(expected) = self.server_signing_token.as_deref() else {
+        let Some(expected) = self.server_signing_token.as_ref().map(|t| t.0.as_str()) else {
             return false;
         };
         // Constant time: compare every byte, whatever the first difference.

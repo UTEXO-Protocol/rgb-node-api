@@ -36,6 +36,13 @@ async fn main() -> anyhow::Result<()> {
     cfg.wallet
         .check_server_signing()
         .map_err(anyhow::Error::msg)?;
+    #[cfg(not(feature = "server-signing"))]
+    if cfg.wallet.allow_server_signing {
+        anyhow::bail!(
+            "allow_server_signing is set, but this build has no server-signing support (build with --features server-signing)"
+        );
+    }
+    #[cfg(feature = "server-signing")]
     if cfg.wallet.allow_server_signing {
         log::warn!(
             "server-side signing is ON: /wallet/generatekeys, /send and /burn handle mnemonics. Private networks only."

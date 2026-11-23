@@ -31,14 +31,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- Optional server-side signing for private deployments, off unless
+- Optional server-side signing for private deployments. It is not in the default
+  build: build with `--features server-signing`. Even then it is off unless
   `allow_server_signing = true`. It also needs `server_signing_token`, which
-  callers send in the `x-signing-token` header. The mnemonic is wiped from
-  memory after use and never logged:
+  callers send in the `x-signing-token` header. The mnemonic is never logged.
+  The final copy is wiped after use, but some earlier copies (network buffer,
+  parser) are not, so treat the server memory as sensitive. The signing checks
+  run before the body is read. A failed signing step fails the started transfer:
   `/wallet/generatekeys` makes a mnemonic, and `/wallet/send` and `/wallet/burn`
   begin, sign (with `mnemonic` in the body) and end in one call.
 - `/wallet/decodergbinvoice` is an alias of `/wallet/decodeinvoice`.
-- `/wallet/listtransfers` takes optional `asset_id` and `batch_transfer_idx`.
+- `/wallet/listtransfers` takes optional `asset_id` and `batch_transfer_idx`. Unknown
+  fields are rejected.
 - `/wallet/decodeinvoice` decodes an RGB invoice without wallet headers.
 - `/wallet/getreceivedmint` returns checked mint details, including the EVM lock ID.
 - `/wallet/issueassetbfa`, `/wallet/mintbegin` and `/wallet/mintend` expose BFA issuance
