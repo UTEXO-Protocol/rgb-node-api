@@ -40,9 +40,6 @@ impl ApiService for WalletSrv {
             .service(
                 signing_routes(scope("/wallet"))
                     .service(resource("/decodeinvoice").route(post().to(node_api::decode_invoice)))
-                    .service(
-                        resource("/decodergbinvoice").route(post().to(node_api::decode_invoice)),
-                    )
                     .service(resource("/register").route(post().to(node_api::register)))
                     .service(resource("/listunspents").route(post().to(node_api::list_unspents)))
                     .service(

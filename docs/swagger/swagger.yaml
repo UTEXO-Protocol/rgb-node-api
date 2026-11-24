@@ -48,27 +48,6 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
-  /wallet/decodergbinvoice:
-    post:
-      summary: Decode RGB Invoice
-      description: Same as `/wallet/decodeinvoice`.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DecodeInvoiceReq'
-      responses:
-        '200':
-          description: Decoded invoice
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/InvoiceData'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '422':
-          $ref: '#/components/responses/UnprocessableEntity'
   /wallet/register:
     post:
       summary: Register Wallet

@@ -40,7 +40,6 @@ All notable changes to this project are documented here. The format follows
   run before the body is read. A failed signing step fails the started transfer:
   `/wallet/generatekeys` makes a mnemonic, and `/wallet/send` and `/wallet/burn`
   begin, sign (with `mnemonic` in the body) and end in one call.
-- `/wallet/decodergbinvoice` is an alias of `/wallet/decodeinvoice`.
 - `/wallet/listtransfers` takes optional `asset_id` and `batch_transfer_idx`. Unknown
   fields are rejected.
 - `/wallet/decodeinvoice` decodes an RGB invoice without wallet headers.

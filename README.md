@@ -82,6 +82,8 @@ Swagger UI is available at `/_swagger`; the OpenAPI specification is at
 |--------|------|-------------|
 | GET | `/healthcheck` | Service liveness check |
 | GET | `/version` | App version info |
+| GET | `/_swagger` | Swagger UI |
+| GET | `/_swagger/swagger.yaml` | OpenAPI specification |
 
 ### Node/SDK API (`/wallet/`)
 
@@ -96,7 +98,6 @@ The begin/end pattern allows clients to sign PSBTs externally:
 |--------|------|-------------|
 | POST | `/register` | Register a read-only wallet |
 | POST | `/decodeinvoice` | Decode an RGB invoice (no wallet headers required) |
-| POST | `/decodergbinvoice` | Alias of `/decodeinvoice` |
 | POST | `/generatekeys` | Make a mnemonic and keys (needs `allow_server_signing` and `x-signing-token`) |
 | POST | `/send` | Send in one call, signed with a `mnemonic` in the body (needs `allow_server_signing` and `x-signing-token`) |
 | POST | `/burn` | Burn in one call, signed with a `mnemonic` in the body (needs `allow_server_signing` and `x-signing-token`) |
