@@ -32,6 +32,15 @@ docker buildx build --load \
 
 The token is available only during the Cargo build and is not stored in the image.
 
+CI builds two images from the same Dockerfile:
+
+| Image tag | Build | Use |
+|-----------|-------|-----|
+| `ghcr.io/utexo-protocol/rgb-node-api:<tag>` | read-only (default) | watch-only wallets, clients sign |
+| `ghcr.io/utexo-protocol/rgb-node-api:<tag>-full` | `--features server-signing` | full wallets, the node signs (private deployments only) |
+
+For a local full-wallet image, add `--build-arg FEATURES=server-signing`.
+
 ### Configuration
 
 ```toml

@@ -3,6 +3,10 @@ FROM rust:1.96 AS builder
 
 WORKDIR /opt/utexo
 
+# Cargo features to build with. Empty: the read-only (watch-only) build.
+# `server-signing`: the full-wallet build, for private deployments only.
+ARG FEATURES=""
+
 COPY . .
 
 RUN apt-get update && apt-get install -y build-essential \
@@ -22,7 +26,7 @@ RUN --mount=type=secret,id=github_token,required=true \
     GIT_CONFIG_KEY_2=credential.https://github.com.useHttpPath GIT_CONFIG_VALUE_2=true \
     GIT_TERMINAL_PROMPT=0 \
     CARGO_NET_GIT_FETCH_WITH_CLI=true \
-    cargo build --locked --release --bin rgb-node-api \
+    cargo build --locked --release --bin rgb-node-api ${FEATURES:+--features "$FEATURES"} \
     && mkdir bins \
     && cp ./target/release/rgb-node-api ./bins/
 

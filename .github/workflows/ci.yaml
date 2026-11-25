@@ -69,13 +69,26 @@ jobs:
         run: python3 -m unittest discover -s scripts -p 'test_*.py'
 
   docker:
-    name: build + push image
+    name: build + push image (${{ matrix.variant }})
     needs: [lint, check-and-test]
     if: >-
       github.event_name == 'push' &&
       (github.ref == 'refs/heads/main' ||
        startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Read-only build: the default image, tags unchanged.
+          - variant: readonly
+            features: ""
+            suffix: ""
+          # Full-wallet build (the node keeps keys and signs): same image name,
+          # tags end in `-full`. Private deployments only.
+          - variant: full
+            features: server-signing
+            suffix: "-full"
     permissions:
       contents: read
       packages: write
@@ -105,12 +118,15 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # `:main` for branch builds; `:vX.Y.Z` + `:vX.Y` + `:latest` for tags;
-      # always the short sha for traceability.
+      # always the short sha for traceability. The full-wallet variant adds
+      # `-full` to every tag (`:main-full`, `:1.2.3-full`, `:latest-full`).
       - name: Image tags & labels
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/utexo-protocol/rgb-node-api
+          flavor: |
+            suffix=${{ matrix.suffix }},onlatest=true
           tags: |
             type=ref,event=branch
             type=sha,prefix=,format=short
@@ -123,9 +139,12 @@ jobs:
         with:
           context: .
           push: true
+          build-args: |
+            FEATURES=${{ matrix.features }}
           secrets: |
             github_token=${{ secrets.ORG_REPO_READ_TOKEN }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # One cache per variant, so the two builds do not overwrite each other.
+          cache-from: type=gha,scope=${{ matrix.variant }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.variant }}
