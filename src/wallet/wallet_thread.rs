@@ -28,6 +28,39 @@ pub(crate) enum WalletCmd {
     WalletInfo {
         resp: ResultChan<Info>,
     },
+    /// Make or restore a wallet that signs inside the node.
+    #[cfg(feature = "server-signing")]
+    AddFullWallet {
+        mnemonic: Option<String>,
+        resp: ResultChan<rgb_lib::keys::Keys>,
+    },
+    /// One-call operations: begin, sign and end inside the node. They need a
+    /// wallet made by `AddFullWallet`.
+    #[cfg(feature = "server-signing")]
+    SendSigned {
+        req: SendBeginReq,
+        resp: ResultChan<wallet::OperationResult>,
+    },
+    #[cfg(feature = "server-signing")]
+    BurnSigned {
+        req: BurnBeginReq,
+        resp: ResultChan<wallet::OperationResult>,
+    },
+    #[cfg(feature = "server-signing")]
+    InflateSigned {
+        req: InflateBeginReq,
+        resp: ResultChan<wallet::OperationResult>,
+    },
+    #[cfg(feature = "server-signing")]
+    SendBtcSigned {
+        req: SendBtcReq,
+        resp: ResultChan<String>,
+    },
+    #[cfg(feature = "server-signing")]
+    CreateUtxosSigned {
+        req: CreateUtxoBeginReq,
+        resp: ResultChan<u8>,
+    },
     Backup {
         password: String,
         resp: ResultChan<BackupPath>,
@@ -208,6 +241,18 @@ impl std::fmt::Display for WalletCmd {
             WalletCmd::SendBtcBegin { .. } => "SendBtcBegin",
             WalletCmd::SendBtcEnd { .. } => "SendBtcEnd",
             WalletCmd::AddReadOnlyWallet { .. } => "AddReadOnlyWallet",
+            #[cfg(feature = "server-signing")]
+            WalletCmd::AddFullWallet { .. } => "AddFullWallet",
+            #[cfg(feature = "server-signing")]
+            WalletCmd::SendSigned { .. } => "SendSigned",
+            #[cfg(feature = "server-signing")]
+            WalletCmd::BurnSigned { .. } => "BurnSigned",
+            #[cfg(feature = "server-signing")]
+            WalletCmd::InflateSigned { .. } => "InflateSigned",
+            #[cfg(feature = "server-signing")]
+            WalletCmd::SendBtcSigned { .. } => "SendBtcSigned",
+            #[cfg(feature = "server-signing")]
+            WalletCmd::CreateUtxosSigned { .. } => "CreateUtxosSigned",
         };
         write!(f, "{}", name)
     }
@@ -275,6 +320,58 @@ impl WalletThread {
                     }
                 }
 
+                #[cfg(feature = "server-signing")]
+                WalletCmd::AddFullWallet { mnemonic, resp } => {
+                    let net = cfg_base.net();
+                    let keys = match mnemonic {
+                        Some(m) => rgb_lib::keys::restore_keys(
+                            net,
+                            m,
+                            rgb_lib::keys::WitnessVersion::Taproot,
+                        ),
+                        None => Ok(rgb_lib::keys::generate_keys(
+                            net,
+                            rgb_lib::keys::WitnessVersion::Taproot,
+                        )),
+                    };
+                    let keys = match keys {
+                        Ok(keys) => keys,
+                        Err(err) => {
+                            let _ = resp.send(Err(err));
+                            continue;
+                        }
+                    };
+                    let id = keys.master_fingerprint.clone();
+                    let existing = multi_wstate.read().unwrap().get(&id).cloned();
+                    if let Some(existing) = existing {
+                        if !existing.lock().unwrap().read_only {
+                            // Same mnemonic again (for example a client
+                            // retry): nothing to do.
+                            let _ = resp.send(Ok(keys));
+                            continue;
+                        }
+                        // A normal call with these headers loaded the wallet
+                        // as watch-only first (for example a poll after a
+                        // restart). Replace it: the caller proves ownership
+                        // with the mnemonic.
+                        multi_wstate.write().unwrap().remove(&id);
+                        log::info!("replacing watch-only wallet with a full wallet: wid={id}");
+                    }
+                    match RgbWalletState::new_full_wallet(&cfg_base, keys.clone()) {
+                        Ok(wallet) => {
+                            multi_wstate
+                                .write()
+                                .unwrap()
+                                .insert(id, Arc::new(Mutex::new(wallet)));
+                            let _ = resp.send(Ok(keys));
+                        }
+                        Err(err) => {
+                            log::error!("add full wallet: error={err:?}");
+                            let _ = resp.send(Err(err));
+                        }
+                    }
+                }
+
                 WalletCmd::WalletInfo { resp } => {
                     // Clone the Arcs out of the map to release the Read lock immediately
                     let wallets: Vec<_> = multi_wstate
@@ -295,8 +392,7 @@ impl WalletThread {
                             wallet_id: id.clone(),
                             master_xpub: wallet.master_xpub.clone(),
                             fingerprint: wallet.id.clone(),
-                            // this service only holds watch-only wallets
-                            read_only: true,
+                            read_only: wallet.read_only,
                         });
                     }
                     let _ = resp.send(Ok(info));
@@ -720,6 +816,98 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                     req.txid,
                     err
                 );
+            }
+            resp.send(res).is_ok()
+        }
+        #[cfg(feature = "server-signing")]
+        WalletCmd::SendSigned { req, resp } => {
+            let expiration_timestamp = match req.expiration() {
+                Ok(expiration) => expiration,
+                Err(err) => {
+                    log_rgb_err!(err, "send: wid={id} error={:?}", err);
+                    let _ = resp.send(Err(err));
+                    return;
+                }
+            };
+            let recipient_map: std::collections::HashMap<String, Vec<wallet::Recipient>> = req
+                .recipient_map
+                .into_iter()
+                .map(|(asset_id, recipients)| {
+                    (asset_id, recipients.into_iter().map(Into::into).collect())
+                })
+                .collect();
+            let mut w = wallet_state.lock().unwrap();
+            let wo = w.wallet_online;
+            let sender_proxy = w.sender_proxy.clone();
+            let res = w.wallet.send(
+                wo,
+                recipient_map,
+                req.donation,
+                req.fee_rate,
+                req.min_confirmations,
+                expiration_timestamp,
+                sender_proxy,
+            );
+            if let Err(err) = &res {
+                log_rgb_err!(err, "send: wid={id} error={:?}", err);
+            }
+            resp.send(res).is_ok()
+        }
+        #[cfg(feature = "server-signing")]
+        WalletCmd::BurnSigned { req, resp } => {
+            let burn_reason = req.burn_reason();
+            let mut w = wallet_state.lock().unwrap();
+            let wo = w.wallet_online;
+            let res = w.wallet.burn(
+                wo,
+                req.asset_id,
+                req.amount,
+                burn_reason,
+                req.fee_rate,
+                req.min_confirmations,
+            );
+            if let Err(err) = &res {
+                log_rgb_err!(err, "burn: wid={id} error={:?}", err);
+            }
+            resp.send(res).is_ok()
+        }
+        #[cfg(feature = "server-signing")]
+        WalletCmd::InflateSigned { req, resp } => {
+            let mut w = wallet_state.lock().unwrap();
+            let wo = w.wallet_online;
+            let res = w.wallet.inflate(
+                wo,
+                req.asset_id,
+                req.inflation_amounts,
+                req.fee_rate,
+                req.min_confirmations,
+            );
+            if let Err(err) = &res {
+                log_rgb_err!(err, "inflate: wid={id} error={:?}", err);
+            }
+            resp.send(res).is_ok()
+        }
+        #[cfg(feature = "server-signing")]
+        WalletCmd::SendBtcSigned { req, resp } => {
+            let mut w = wallet_state.lock().unwrap();
+            let wo = w.wallet_online;
+            let res = w
+                .wallet
+                .send_btc(wo, req.address, req.amount, req.fee_rate, false);
+            if let Err(err) = &res {
+                log_rgb_err!(err, "send btc: wid={id} error={:?}", err);
+            }
+            resp.send(res).is_ok()
+        }
+        #[cfg(feature = "server-signing")]
+        WalletCmd::CreateUtxosSigned { req, resp } => {
+            let mut w = wallet_state.lock().unwrap();
+            let wo = w.wallet_online;
+            let res = w
+                .wallet
+                .create_utxos(wo, req.up_to, req.num, req.size, req.fee_rate, false);
+            if let Err(err) = &res {
+                log_rgb_err!(err, "create utxos: wid={id} error={:?}", err);
             }
             resp.send(res).is_ok()
         }

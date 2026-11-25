@@ -31,15 +31,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- Optional server-side signing for private deployments. It is not in the default
-  build: build with `--features server-signing`. Even then it is off unless
-  `allow_server_signing = true`. It also needs `server_signing_token`, which
-  callers send in the `x-signing-token` header. The mnemonic is never logged.
-  The final copy is wiped after use, but some earlier copies (network buffer,
-  parser) are not, so treat the server memory as sensitive. The signing checks
-  run before the body is read. A failed signing step fails the started transfer:
-  `/wallet/generatekeys` makes a mnemonic, and `/wallet/send` and `/wallet/burn`
-  begin, sign (with `mnemonic` in the body) and end in one call.
+- Optional full-wallet mode for private deployments, in a separate build
+  (`--features server-signing`). It is off unless `allow_server_signing = true`
+  and `server_signing_token` (16+ characters) is set. `POST /wallet/init` makes
+  or restores a wallet whose keys stay in the node's memory. `/wallet/send`,
+  `/burn`, `/inflate`, `/sendbtc` and `/createutxos` then begin, sign and end in
+  one call, with the same bodies as the begin routes. The seed is not stored:
+  call `/wallet/init` again with the same mnemonic after a restart. The token is
+  checked before any body is read and never logged.
 - `/wallet/listtransfers` takes optional `asset_id` and `batch_transfer_idx`. Unknown
   fields are rejected.
 - `/wallet/decodeinvoice` decodes an RGB invoice without wallet headers.

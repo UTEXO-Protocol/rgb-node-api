@@ -134,12 +134,22 @@ fn get_app_info() -> AppInfo {
 }
 
 #[cfg(feature = "server-signing")]
-/// Routes that handle a mnemonic. Only built with the `server-signing` feature.
+/// Routes that keep keys in the node and sign there. Only built with the
+/// `server-signing` feature. Each one is behind the signing gate.
 fn signing_routes(wallet: actix_web::Scope) -> actix_web::Scope {
+    use actix_web::middleware::from_fn;
+    let gated = |path: &str, handler: actix_web::Route| {
+        resource(path)
+            .wrap(from_fn(node_api::signing_gate))
+            .route(handler)
+    };
     wallet
-        .service(resource("/generatekeys").route(post().to(node_api::generate_keys)))
-        .service(resource("/send").route(post().to(node_api::send)))
-        .service(resource("/burn").route(post().to(node_api::burn)))
+        .service(gated("/init", post().to(node_api::init)))
+        .service(gated("/send", post().to(node_api::send)))
+        .service(gated("/burn", post().to(node_api::burn)))
+        .service(gated("/inflate", post().to(node_api::inflate)))
+        .service(gated("/sendbtc", post().to(node_api::send_btc)))
+        .service(gated("/createutxos", post().to(node_api::create_utxos)))
 }
 
 #[cfg(not(feature = "server-signing"))]
@@ -195,45 +205,113 @@ mod tests {
     }
 
     #[cfg(feature = "server-signing")]
+    /// The status of a response, or of the error a middleware or handler
+    /// returned (the real server turns errors into responses).
+    #[cfg(feature = "server-signing")]
+    async fn status_of<S, R, B>(app: &S, req: R) -> StatusCode
+    where
+        S: actix_web::dev::Service<
+                R,
+                Response = actix_web::dev::ServiceResponse<B>,
+                Error = actix_web::Error,
+            >,
+    {
+        match test::try_call_service(app, req).await {
+            Ok(res) => res.status(),
+            Err(err) => err.error_response().status(),
+        }
+    }
+
+    #[cfg(feature = "server-signing")]
+    const SIGNING_PATHS: [&str; 6] = [
+        "/wallet/init",
+        "/wallet/send",
+        "/wallet/burn",
+        "/wallet/inflate",
+        "/wallet/sendbtc",
+        "/wallet/createutxos",
+    ];
+
+    #[cfg(feature = "server-signing")]
     #[actix_web::test]
-    async fn signing_shortcuts_are_off_by_default() {
+    async fn signing_routes_are_off_by_default() {
         let tasks = TaskTracker::new();
         let ctx = WalletCtx::new(Config::default(), &tasks);
         let app =
             test::init_service(App::new().service(WalletSrv { ctx: ctx.clone() }.service())).await;
-        for path in ["/wallet/generatekeys", "/wallet/send", "/wallet/burn"] {
+        for path in SIGNING_PATHS {
+            // No wallet headers and a body that is not JSON: the gate answers
+            // before anything is parsed, so this is a 403, not a 400/401/415.
             let req = test::TestRequest::post()
                 .uri(path)
-                .insert_header(("xpub-van", "x"))
-                .insert_header(("xpub-col", "x"))
-                .insert_header(("master-fingerprint", "x"))
-                .set_json(
-                    json!({"mnemonic": "x", "asset_id": "x", "amount": 1, "recipient_map": {}}),
-                )
+                .set_payload("not json")
                 .to_request();
-            let res = test::call_service(&app, req).await;
-            assert_eq!(res.status(), StatusCode::FORBIDDEN, "{path}");
+            assert_eq!(status_of(&app, req).await, StatusCode::FORBIDDEN, "{path}");
         }
         ctx.stop().await.unwrap();
         tasks.close();
         tasks.wait().await;
     }
 
-    /// The signing check must run before headers and body are read.
     #[cfg(feature = "server-signing")]
     #[actix_web::test]
-    async fn signing_gate_runs_before_parsing() {
+    async fn signing_routes_need_the_token_before_anything_is_parsed() {
         let tasks = TaskTracker::new();
-        let ctx = WalletCtx::new(Config::default(), &tasks);
+        let cfg = Config {
+            allow_server_signing: true,
+            server_signing_token: Some("0123456789abcdef".into()),
+            network: "regtest".into(),
+            ..Config::default()
+        };
+        let ctx = WalletCtx::new(cfg, &tasks);
         let app =
             test::init_service(App::new().service(WalletSrv { ctx: ctx.clone() }.service())).await;
-        for path in ["/wallet/send", "/wallet/burn"] {
+        for path in SIGNING_PATHS {
+            for token in [None, Some("0123456789abcdeX"), Some("0123456789abcde")] {
+                let mut req = test::TestRequest::post().uri(path).set_payload("not json");
+                if let Some(token) = token {
+                    req = req.insert_header(("x-signing-token", token));
+                }
+                assert_eq!(
+                    status_of(&app, req.to_request()).await,
+                    StatusCode::UNAUTHORIZED,
+                    "{path} {token:?}"
+                );
+            }
+        }
+        ctx.stop().await.unwrap();
+        tasks.close();
+        tasks.wait().await;
+    }
+
+    #[cfg(feature = "server-signing")]
+    #[actix_web::test]
+    async fn init_rejects_bad_input_and_never_falls_back_to_new_keys() {
+        let tasks = TaskTracker::new();
+        let cfg = Config {
+            allow_server_signing: true,
+            server_signing_token: Some("0123456789abcdef".into()),
+            network: "regtest".into(),
+            ..Config::default()
+        };
+        let ctx = WalletCtx::new(cfg, &tasks);
+        let app =
+            test::init_service(App::new().service(WalletSrv { ctx: ctx.clone() }.service())).await;
+        for payload in [
+            "not json".to_string(),
+            r#"{"mnemonic": 5}"#.to_string(),
+            r#"{"mnemonic": "not a valid phrase"}"#.to_string(),
+        ] {
             let req = test::TestRequest::post()
-                .uri(path)
-                .set_payload("not json")
+                .uri("/wallet/init")
+                .insert_header(("x-signing-token", "0123456789abcdef"))
+                .set_payload(payload.clone())
                 .to_request();
-            let res = test::call_service(&app, req).await;
-            assert_eq!(res.status(), StatusCode::FORBIDDEN, "{path}");
+            assert_eq!(
+                status_of(&app, req).await,
+                StatusCode::BAD_REQUEST,
+                "{payload}"
+            );
         }
         ctx.stop().await.unwrap();
         tasks.close();
@@ -259,49 +337,6 @@ mod tests {
             .to_request();
         let res = test::call_service(&app, req).await;
         assert!(res.status().is_client_error(), "{}", res.status());
-        ctx.stop().await.unwrap();
-        tasks.close();
-        tasks.wait().await;
-    }
-
-    #[cfg(feature = "server-signing")]
-    #[actix_web::test]
-    async fn generate_keys_when_enabled() {
-        let tasks = TaskTracker::new();
-        let cfg = Config {
-            allow_server_signing: true,
-            server_signing_token: Some("0123456789abcdef".into()),
-            network: "regtest".into(),
-            ..Config::default()
-        };
-        let ctx = WalletCtx::new(cfg, &tasks);
-        let app =
-            test::init_service(App::new().service(WalletSrv { ctx: ctx.clone() }.service())).await;
-        let no_token = test::TestRequest::post()
-            .uri("/wallet/generatekeys")
-            .to_request();
-        let res = test::call_service(&app, no_token).await;
-        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
-        let bad_token = test::TestRequest::post()
-            .uri("/wallet/generatekeys")
-            .insert_header(("x-signing-token", "0123456789abcdeX"))
-            .to_request();
-        let res = test::call_service(&app, bad_token).await;
-        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
-        let req = test::TestRequest::post()
-            .uri("/wallet/generatekeys")
-            .insert_header(("x-signing-token", "0123456789abcdef"))
-            .to_request();
-        let res = test::call_service(&app, req).await;
-        assert_eq!(res.status(), StatusCode::OK);
-        assert_eq!(
-            res.headers().get("cache-control").unwrap(),
-            "no-store",
-            "the response holds a mnemonic"
-        );
-        let body: Value = test::read_body_json(res).await;
-        assert_eq!(body["mnemonic"].as_str().unwrap().split(' ').count(), 12);
-        assert!(body["master_fingerprint"].is_string());
         ctx.stop().await.unwrap();
         tasks.close();
         tasks.wait().await;

@@ -45,7 +45,7 @@ async fn main() -> anyhow::Result<()> {
     #[cfg(feature = "server-signing")]
     if cfg.wallet.allow_server_signing {
         log::warn!(
-            "server-side signing is ON: /wallet/generatekeys, /send and /burn handle mnemonics. Private networks only."
+            "server-side signing is ON: /wallet/init keeps keys in memory and the node signs for those wallets. Private networks only."
         );
     }
 

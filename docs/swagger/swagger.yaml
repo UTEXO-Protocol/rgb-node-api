@@ -1293,35 +1293,52 @@ paths:
           $ref: '#/components/responses/InternalError'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
-  /wallet/generatekeys:
+  /wallet/init:
     post:
-      summary: Generate Keys
+      summary: Init Full Wallet
       description: >-
-        Make a new mnemonic and its registration headers. Only in a build with
-        the `server-signing` feature (otherwise this route returns 404). The
-        server must also set `allow_server_signing` (otherwise 403). Needs the
-        `x-signing-token` header (otherwise 401). Nothing is stored. The
-        response has `Cache-Control: no-store`.
+        Make a wallet that keeps its keys in the node's memory, so the node can
+        sign for it. With `mnemonic` it restores that wallet. Without one it
+        makes new keys. The mnemonic is not stored on disk: after a restart,
+        call this again with the same mnemonic. If the node already loaded a
+        watch-only wallet with the same fingerprint, it is replaced. The
+        response holds the mnemonic and the values for the `xpub-van`,
+        `xpub-col` and `master-fingerprint` headers, and has
+        `Cache-Control: no-store`. Only in a build with the `server-signing` feature (otherwise this route returns 404). The server must also set `allow_server_signing` (otherwise 403). The `x-signing-token` header is checked first (otherwise 401), before the body or the wallet headers are read.
       parameters:
         - name: x-signing-token
           in: header
           required: true
           schema:
             type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mnemonic:
+                  type: string
+                  description: BIP39 mnemonic to restore. Leave out to make new keys.
       responses:
         '200':
-          description: The new keys, including the mnemonic.
+          description: The keys of the wallet, including the mnemonic.
           content:
             application/json:
               schema:
                 type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           description: Server-side signing is disabled.
   /wallet/send:
     post:
       summary: Send
       description: >-
-        Begin, sign with the mnemonic and end a send in one call. Private deployments only. Only in a build with the `server-signing` feature (otherwise this route returns 404). Needs `allow_server_signing` (else 403) and the `x-signing-token` header (else 401). Same body as `/wallet/sendbegin` plus `mnemonic`. A wrong mnemonic is refused before anything starts. If signing fails, the started transfer is failed.
+        Begin, sign inside the node and end a send in one call. Private deployments only. Same body as `/wallet/sendbegin`. Only in a build with the `server-signing` feature (otherwise this route returns 404). The server must also set `allow_server_signing` (otherwise 403). The `x-signing-token` header is checked first (otherwise 401), before the body or the wallet headers are read. The wallet must be a full wallet made by `/wallet/init`; a watch-only wallet is refused.
       parameters:
         - name: x-signing-token
           in: header
@@ -1348,14 +1365,7 @@ paths:
         content:
           application/json:
             schema:
-              allOf:
-                - $ref: '#/components/schemas/SendAssetBeginRequestModel'
-                - type: object
-                  required: [mnemonic]
-                  properties:
-                    mnemonic:
-                      type: string
-                      description: BIP39 mnemonic of the wallet named in the headers.
+              $ref: '#/components/schemas/SendAssetBeginRequestModel'
       responses:
         '200':
           description: Successful Response
@@ -1375,7 +1385,7 @@ paths:
     post:
       summary: Burn
       description: >-
-        Begin, sign with the mnemonic and end a burn in one call. Private deployments only. Only in a build with the `server-signing` feature (otherwise this route returns 404). Needs `allow_server_signing` (else 403) and the `x-signing-token` header (else 401). Same body as `/wallet/burnbegin` plus `mnemonic`. A wrong mnemonic is refused before anything starts. If signing fails, the started transfer is failed.
+        Begin, sign inside the node and end a burn in one call. Private deployments only. Same body as `/wallet/burnbegin`. Only in a build with the `server-signing` feature (otherwise this route returns 404). The server must also set `allow_server_signing` (otherwise 403). The `x-signing-token` header is checked first (otherwise 401), before the body or the wallet headers are read. The wallet must be a full wallet made by `/wallet/init`; a watch-only wallet is refused.
       parameters:
         - name: x-signing-token
           in: header
@@ -1402,14 +1412,7 @@ paths:
         content:
           application/json:
             schema:
-              allOf:
-                - $ref: '#/components/schemas/BurnBeginRequestModel'
-                - type: object
-                  required: [mnemonic]
-                  properties:
-                    mnemonic:
-                      type: string
-                      description: BIP39 mnemonic of the wallet named in the headers.
+              $ref: '#/components/schemas/BurnBeginRequestModel'
       responses:
         '200':
           description: Successful Response
@@ -1417,6 +1420,147 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SendResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Server-side signing is disabled.
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+  /wallet/inflate:
+    post:
+      summary: Inflate
+      description: >-
+        Begin, sign inside the node and end an IFA inflation in one call. Private deployments only. Same body as `/wallet/inflatebegin`. Only in a build with the `server-signing` feature (otherwise this route returns 404). The server must also set `allow_server_signing` (otherwise 403). The `x-signing-token` header is checked first (otherwise 401), before the body or the wallet headers are read. The wallet must be a full wallet made by `/wallet/init`; a watch-only wallet is refused.
+      parameters:
+        - name: x-signing-token
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InflateBeginRequestModel'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Server-side signing is disabled.
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+  /wallet/sendbtc:
+    post:
+      summary: Send BTC
+      description: >-
+        Begin, sign inside the node and end a BTC send in one call. Private deployments only. Same body as `/wallet/sendbtcbegin`. Only in a build with the `server-signing` feature (otherwise this route returns 404). The server must also set `allow_server_signing` (otherwise 403). The `x-signing-token` header is checked first (otherwise 401), before the body or the wallet headers are read. The wallet must be a full wallet made by `/wallet/init`; a watch-only wallet is refused.
+      parameters:
+        - name: x-signing-token
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendBtcBeginRequestModel'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendBtcResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Server-side signing is disabled.
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+  /wallet/createutxos:
+    post:
+      summary: Create UTXOs
+      description: >-
+        Begin, sign inside the node and end UTXO creation in one call. Private deployments only. Same body as `/wallet/createutxosbegin`. Only in a build with the `server-signing` feature (otherwise this route returns 404). The server must also set `allow_server_signing` (otherwise 403). The `x-signing-token` header is checked first (otherwise 401), before the body or the wallet headers are read. The wallet must be a full wallet made by `/wallet/init`; a watch-only wallet is refused.
+      parameters:
+        - name: x-signing-token
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUtxosBegin'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateUtxosResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':

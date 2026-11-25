@@ -55,9 +55,10 @@ proxy_address = ["rpc://127.0.0.1:3000/json-rpc"]
 # eth_max_mint_lock_blocks = 1000
 # Optional, PRIVATE DEPLOYMENTS ONLY. Needs a build with
 # `cargo build --features server-signing` (not in the default build).
-# The server then makes keys and signs for /generatekeys, /send and /burn. The mnemonic then reaches the server, so keep
-# the API on a private network (or behind TLS) and never expose it publicly.
-# Callers must send the token in the `x-signing-token` header.
+# The node can then keep a wallet's keys in memory (POST /wallet/init) and sign
+# for it: /send, /burn, /inflate, /sendbtc and /createutxos. The seed phrase
+# reaches the server, so keep the API on a private network (or behind TLS) and
+# never expose it publicly. Callers must send the token in `x-signing-token`.
 # allow_server_signing = true
 # server_signing_token = "at-least-16-random-characters"
 ```
@@ -98,9 +99,6 @@ The begin/end pattern allows clients to sign PSBTs externally:
 |--------|------|-------------|
 | POST | `/register` | Register a read-only wallet |
 | POST | `/decodeinvoice` | Decode an RGB invoice (no wallet headers required) |
-| POST | `/generatekeys` | Make a mnemonic and keys (needs `allow_server_signing` and `x-signing-token`) |
-| POST | `/send` | Send in one call, signed with a `mnemonic` in the body (needs `allow_server_signing` and `x-signing-token`) |
-| POST | `/burn` | Burn in one call, signed with a `mnemonic` in the body (needs `allow_server_signing` and `x-signing-token`) |
 | POST | `/getreceivedmint` | Get a received mint checked by the wallet |
 | POST | `/getassetmetadata` | Get asset metadata |
 | POST | `/inspectpsbt` | Inspect PSBT inputs, outputs, fee and partial signatures |
@@ -134,6 +132,29 @@ The begin/end pattern allows clients to sign PSBTs externally:
 | POST | `/failtransfers` | Mark transfers as failed |
 | POST | `/refresh` | Force wallet sync |
 | POST | `/drop` | Remove wallet from memory |
+
+### Full-wallet build (`--features server-signing`)
+
+Private deployments only. The node keeps the keys of a wallet in memory and
+signs for it, so a client (for example an exchange) does not run the begin/end
+round trip. The three wallet headers stay the same. These routes need the
+`x-signing-token` header, are off unless `allow_server_signing = true`, and
+return 404 in a normal build.
+
+The seed is **not stored**. After a restart, call `/init` again with the same
+mnemonic. `/init` replaces a watch-only wallet with the same fingerprint.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/init` | Make a full wallet (`{mnemonic?}`): restores it, or makes new keys. Returns the keys and the header values |
+| POST | `/send` | Send RGB in one call (body of `/sendbegin`) |
+| POST | `/burn` | Burn in one call (body of `/burnbegin`) |
+| POST | `/inflate` | Inflate an IFA asset in one call (body of `/inflatebegin`) |
+| POST | `/sendbtc` | Send BTC in one call (body of `/sendbtcbegin`) |
+| POST | `/createutxos` | Create UTXOs in one call (body of `/createutxosbegin`) |
+
+All routes are under `/wallet/`. On a watch-only wallet they return an error;
+use the begin/end routes there.
 
 A root-level `POST /blindreceive` is also registered as a legacy alias for
 `POST /wallet/blindreceive`. It is marked for removal in the source and should

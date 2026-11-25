@@ -115,54 +115,15 @@ pub async fn decode_invoice(
 }
 
 #[cfg(feature = "server-signing")]
-/// Only the mnemonic of a signing request. Other fields are ignored here.
-///
-/// No `Debug`, so it cannot end up in a log line by accident. The final copy of
-/// the mnemonic is wiped when dropped. Earlier copies (the network buffer, the
-/// parser) are not wiped, so this lowers the risk and does not remove it.
-#[derive(serde::Deserialize)]
-struct MnemonicField {
-    mnemonic: zeroize::Zeroizing<String>,
-}
-
-#[cfg(feature = "server-signing")]
-/// The shortcut endpoints sign on the server, so their body holds the wallet's
-/// mnemonic next to the normal request fields.
-pub struct WithMnemonic<T> {
-    pub mnemonic: zeroize::Zeroizing<String>,
-    pub req: T,
-}
-
-#[cfg(feature = "server-signing")]
-/// Biggest body a signing endpoint reads.
-const MAX_SIGNING_BODY: usize = 256 * 1024;
-
-#[cfg(feature = "server-signing")]
-/// Read the body only after the signing checks passed, and parse it twice
-/// (no `flatten`, so serde makes no extra buffer of the mnemonic).
-async fn read_with_mnemonic<T: serde::de::DeserializeOwned>(
-    payload: actix_web::web::Payload,
-) -> Result<WithMnemonic<T>, ApiError> {
-    let bad = |msg: String| error_with(StatusCode::BAD_REQUEST, ApiErrorCode::BadInput, &msg);
-    let body = payload
-        .to_bytes_limited(MAX_SIGNING_BODY)
-        .await
-        .map_err(|_| bad("request body too large".into()))?
-        .map_err(|_| bad("cannot read request body".into()))?;
-    let body = zeroize::Zeroizing::new(body.to_vec());
-    let MnemonicField { mnemonic } = serde_json::from_slice(&body)
-        .map_err(|_| bad("body needs a string field: mnemonic".into()))?;
-    let req = serde_json::from_slice(&body).map_err(|e| bad(format!("invalid body: {e}")))?;
-    Ok(WithMnemonic { mnemonic, req })
-}
-
-#[cfg(feature = "server-signing")]
 const HEADER_SIGNING_TOKEN: &str = "x-signing-token";
 
 #[cfg(feature = "server-signing")]
-/// The signing endpoints are for private deployments: they need the switch on
-/// and the shared secret in `x-signing-token`.
-fn require_server_signing(ctx: &WalletCtx, http: &actix_web::HttpRequest) -> Result<(), ApiError> {
+/// The routes that keep keys and sign in the node are for private deployments:
+/// they need the switch on and the shared secret in `x-signing-token`.
+fn check_server_signing(
+    ctx: &WalletCtx,
+    headers: &actix_web::http::header::HeaderMap,
+) -> Result<(), ApiError> {
     if !ctx.server_signing_enabled() {
         return Err(error_with(
             StatusCode::FORBIDDEN,
@@ -170,8 +131,7 @@ fn require_server_signing(ctx: &WalletCtx, http: &actix_web::HttpRequest) -> Res
             "server-side signing is disabled (set allow_server_signing)",
         ));
     }
-    let token = http
-        .headers()
+    let token = headers
         .get(HEADER_SIGNING_TOKEN)
         .and_then(|v| v.to_str().ok())
         .unwrap_or_default();
@@ -183,6 +143,20 @@ fn require_server_signing(ctx: &WalletCtx, http: &actix_web::HttpRequest) -> Res
         ));
     }
     Ok(())
+}
+
+#[cfg(feature = "server-signing")]
+/// Runs before the other extractors, so a refused caller never makes the
+/// server read a body or look at the wallet headers.
+pub async fn signing_gate(
+    req: actix_web::dev::ServiceRequest,
+    next: actix_web::middleware::Next<impl actix_web::body::MessageBody + 'static>,
+) -> Result<actix_web::dev::ServiceResponse<impl actix_web::body::MessageBody>, actix_web::Error> {
+    let ctx = req
+        .app_data::<Data<WalletCtx>>()
+        .ok_or_else(|| actix_web::error::ErrorInternalServerError("no wallet context"))?;
+    check_server_signing(ctx, req.headers())?;
+    next.call(req).await
 }
 
 #[derive(serde::Serialize)]
@@ -561,34 +535,54 @@ pub async fn burn_end(
 }
 
 #[cfg(feature = "server-signing")]
-/// Make a new mnemonic and the registration headers for it.
-pub async fn generate_keys(
-    ctx: Data<WalletCtx>,
-    http: actix_web::HttpRequest,
-) -> Result<actix_web::HttpResponse, ApiError> {
-    require_server_signing(&ctx, &http)?;
-    // The body holds a mnemonic: no cache may keep it.
-    Ok(actix_web::HttpResponse::Ok()
-        .insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
-        .json(ctx.generate_keys()))
+/// Body of `/wallet/init`. The mnemonic is optional: without it the node makes one.
+#[derive(serde::Deserialize, Default)]
+struct InitReq {
+    #[serde(default)]
+    mnemonic: Option<String>,
 }
 
 #[cfg(feature = "server-signing")]
-/// Send assets in one call: begin, sign with `mnemonic`, end.
-pub async fn send(
+/// Make a wallet that keeps its keys in the node's memory and signs there.
+/// With `mnemonic` it restores that wallet (call it again after a restart),
+/// without one it makes new keys. The response holds the mnemonic and the three
+/// values for the `xpub-van`, `xpub-col` and `master-fingerprint` headers.
+pub async fn init(
     ctx: Data<WalletCtx>,
-    http: actix_web::HttpRequest,
-    payload: actix_web::web::Payload,
-) -> Result<Json<SendResult>, ApiError> {
-    // Check first, so a refused caller never makes the server read a mnemonic.
-    require_server_signing(&ctx, &http)?;
-    let wallet_key = XWalletKey::from_headers(&http)?;
-    let WithMnemonic { mnemonic, req } = read_with_mnemonic::<SendBeginReq>(payload).await?;
-    let ctx = derive_wctx(&ctx, wallet_key).await?;
-    let res = ctx
-        .send_signed(req, mnemonic)
+    body: actix_web::web::Bytes,
+) -> Result<actix_web::HttpResponse, ApiError> {
+    // No body at all means "make new keys". A body that does not parse is an
+    // error, never a silent switch to new keys.
+    let req: InitReq = if body.iter().all(u8::is_ascii_whitespace) {
+        InitReq::default()
+    } else {
+        serde_json::from_slice(&body).map_err(|_| {
+            error_with(
+                StatusCode::BAD_REQUEST,
+                ApiErrorCode::BadInput,
+                "body must be a JSON object with an optional string field: mnemonic",
+            )
+        })?
+    };
+    let keys = ctx
+        .init_full_wallet(req.mnemonic)
         .await
         .map_err(map_rgb_error)?;
+    // The body holds a mnemonic: no cache may keep it.
+    Ok(actix_web::HttpResponse::Ok()
+        .insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
+        .json(keys))
+}
+
+#[cfg(feature = "server-signing")]
+/// Send assets in one call: begin, sign inside the node, end.
+pub async fn send(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+    req: Json<SendBeginReq>,
+) -> Result<Json<SendResult>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    let res = ctx.send_signed(req.0).await.map_err(map_rgb_error)?;
     Ok(Json(SendResult {
         txid: res.txid,
         batch_transfer_idx: res.batch_transfer_idx,
@@ -596,24 +590,61 @@ pub async fn send(
 }
 
 #[cfg(feature = "server-signing")]
-/// Burn assets in one call: begin, sign with `mnemonic`, end.
+/// Burn assets in one call: begin, sign inside the node, end.
 pub async fn burn(
     ctx: Data<WalletCtx>,
-    http: actix_web::HttpRequest,
-    payload: actix_web::web::Payload,
+    wallet_key: XWalletKey,
+    req: Json<BurnBeginReq>,
 ) -> Result<Json<SendResult>, ApiError> {
-    // Check first, so a refused caller never makes the server read a mnemonic.
-    require_server_signing(&ctx, &http)?;
-    let wallet_key = XWalletKey::from_headers(&http)?;
-    let WithMnemonic { mnemonic, req } = read_with_mnemonic::<BurnBeginReq>(payload).await?;
     let ctx = derive_wctx(&ctx, wallet_key).await?;
-    let res = ctx
-        .burn_signed(req, mnemonic)
-        .await
-        .map_err(map_rgb_error)?;
+    let res = ctx.burn_signed(req.0).await.map_err(map_rgb_error)?;
     Ok(Json(SendResult {
         txid: res.txid,
         batch_transfer_idx: res.batch_transfer_idx,
+    }))
+}
+
+#[cfg(feature = "server-signing")]
+/// Inflate an IFA asset in one call: begin, sign inside the node, end.
+pub async fn inflate(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+    req: Json<InflateBeginReq>,
+) -> Result<Json<SendResult>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    let res = ctx.inflate_signed(req.0).await.map_err(map_rgb_error)?;
+    Ok(Json(SendResult {
+        txid: res.txid,
+        batch_transfer_idx: res.batch_transfer_idx,
+    }))
+}
+
+#[cfg(feature = "server-signing")]
+/// Send BTC in one call: begin, sign inside the node, end.
+pub async fn send_btc(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+    req: Json<SendBtcReq>,
+) -> Result<Json<SendBtcRes>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    let txid = ctx.send_btc_signed(req.0).await.map_err(map_rgb_error)?;
+    Ok(Json(SendBtcRes { txid }))
+}
+
+#[cfg(feature = "server-signing")]
+/// Create UTXOs in one call: begin, sign inside the node, end.
+pub async fn create_utxos(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+    req: Json<CreateUtxoBeginReq>,
+) -> Result<Json<CreateUtxosRes>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    let created = ctx
+        .create_utxos_signed(req.0)
+        .await
+        .map_err(map_rgb_error)?;
+    Ok(Json(CreateUtxosRes {
+        created: usize::from(created),
     }))
 }
 

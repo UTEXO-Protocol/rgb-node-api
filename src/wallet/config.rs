@@ -41,11 +41,13 @@ pub struct Config {
     pub eth_max_mint_lock_blocks: Option<u64>,
     #[serde(default)]
     pub bfa_enabled: bool,
-    /// Allow `/wallet/generatekeys`, `/wallet/send` and `/wallet/burn`. They
-    /// handle a mnemonic on the server, so they are off by default.
+    /// Allow full wallets: `/wallet/init` keeps the keys in the node's memory
+    /// and `/wallet/send`, `/burn`, `/inflate`, `/sendbtc` and `/createutxos`
+    /// sign inside the node. Off by default. Needs a build with the
+    /// `server-signing` feature.
     #[serde(default)]
     pub allow_server_signing: bool,
-    /// Shared secret that callers of the signing endpoints send in the
+    /// Shared secret that callers of those routes send in the
     /// `x-signing-token` header. Required (16+ characters) when
     /// `allow_server_signing` is set.
     #[serde(default)]
@@ -167,6 +169,40 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn signing_token_check() {
+        let cfg = Config {
+            allow_server_signing: true,
+            server_signing_token: Some("0123456789abcdef".into()),
+            ..Config::default()
+        };
+        assert!(cfg.signing_token_matches("0123456789abcdef"));
+        assert!(!cfg.signing_token_matches("0123456789abcdeX"));
+        assert!(!cfg.signing_token_matches("0123456789abcde"));
+        assert!(!cfg.signing_token_matches(""));
+        assert!(Config::default().check_server_signing().is_ok());
+        let no_token = Config {
+            allow_server_signing: true,
+            ..Config::default()
+        };
+        assert!(no_token.check_server_signing().is_err());
+        let short = Config {
+            allow_server_signing: true,
+            server_signing_token: Some("short".into()),
+            ..Config::default()
+        };
+        assert!(short.check_server_signing().is_err());
+    }
+
+    #[test]
+    fn token_is_redacted_in_debug() {
+        let cfg = Config {
+            server_signing_token: Some("0123456789abcdef".into()),
+            ..Config::default()
+        };
+        assert!(!format!("{cfg:?}").contains("0123456789abcdef"));
+    }
 
     #[test]
     fn bfa_is_explicit_and_requires_an_rpc() {

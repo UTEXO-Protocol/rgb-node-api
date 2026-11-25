@@ -4,8 +4,6 @@ use rgb_lib::wallet;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
-#[cfg(feature = "server-signing")]
-use zeroize::Zeroizing;
 
 use super::Config;
 use super::models::*;
@@ -410,7 +408,7 @@ impl WalletCtx {
 
 #[cfg(feature = "server-signing")]
 impl WalletCtx {
-    /// Whether the server may handle mnemonics (`allow_server_signing`).
+    /// Whether the server may keep keys and sign (`allow_server_signing`).
     pub fn server_signing_enabled(&self) -> bool {
         self.cfg.allow_server_signing
     }
@@ -419,94 +417,59 @@ impl WalletCtx {
         self.cfg.signing_token_matches(token)
     }
 
-    /// New keys, including the mnemonic. Not tied to any wallet.
-    pub fn generate_keys(&self) -> rgb_lib::keys::Keys {
-        super::signer::new_keys(&self.cfg)
-    }
-
-    async fn sign(
+    /// Make a wallet that holds its keys in memory and signs inside the node.
+    /// With a mnemonic it restores that wallet, without one it makes new keys.
+    pub async fn init_full_wallet(
         &self,
-        mnemonic: Zeroizing<String>,
-        psbt: String,
-    ) -> Result<String, rgb_lib::Error> {
-        let cfg = self.cfg.clone();
-        let id = self.id.clone().unwrap_or_default();
-        tokio::task::spawn_blocking(move || super::signer::sign_psbt(&cfg, &mnemonic, &id, psbt))
-            .await
-            .map_err(|_| err_dead_thread())?
-    }
-
-    /// Check the mnemonic against this wallet, before anything is started.
-    async fn check_mnemonic(&self, mnemonic: &Zeroizing<String>) -> Result<(), rgb_lib::Error> {
-        let cfg = self.cfg.clone();
-        let id = self.id.clone().unwrap_or_default();
-        let mnemonic = mnemonic.clone();
-        tokio::task::spawn_blocking(move || super::signer::check_mnemonic(&cfg, &mnemonic, &id))
-            .await
-            .map_err(|_| err_dead_thread())?
-    }
-
-    /// Highest batch transfer index now, or 0 when there is none.
-    async fn max_batch_idx(&self) -> Result<i32, rgb_lib::Error> {
-        let all = self.transfers_filtered(None, None).await?;
-        Ok(all.iter().map(|t| t.batch_transfer_idx).max().unwrap_or(0))
-    }
-
-    /// Fail the transfers that a `*_begin` made after `before_idx`, so a failed
-    /// signing step does not keep UTXOs reserved. Best effort.
-    async fn release_started(&self, before_idx: i32) {
-        let Ok(all) = self.transfers_filtered(None, None).await else {
-            return;
-        };
-        let mut idxs: Vec<i32> = all
-            .iter()
-            .filter(|t| {
-                t.batch_transfer_idx > before_idx
-                    && t.status == rgb_lib::TransferStatus::WaitingCounterparty
-            })
-            .map(|t| t.batch_transfer_idx)
-            .collect();
-        idxs.sort_unstable();
-        idxs.dedup();
-        for idx in idxs {
-            let _ = self.fail_transfer(Some(idx), false, true).await;
-        }
+        mnemonic: Option<String>,
+    ) -> Result<rgb_lib::keys::Keys, rgb_lib::Error> {
+        let (resp, recv) = oneshot::channel();
+        let cmd = WalletCmd::AddFullWallet { mnemonic, resp };
+        self.send_cmd(cmd, recv).await
     }
 
     /// `send_begin`, sign and `send_end` in one call.
     pub async fn send_signed(
         &self,
         req: SendBeginReq,
-        mnemonic: Zeroizing<String>,
     ) -> Result<wallet::OperationResult, rgb_lib::Error> {
-        self.check_mnemonic(&mnemonic).await?;
-        let before = self.max_batch_idx().await?;
-        let psbt = self.send_begin(req).await?;
-        match self.sign(mnemonic, psbt).await {
-            Ok(signed) => self.send_end(signed).await,
-            Err(err) => {
-                self.release_started(before).await;
-                Err(err)
-            }
-        }
+        let (resp, recv) = oneshot::channel();
+        self.send_cmd(WalletCmd::SendSigned { req, resp }, recv)
+            .await
     }
 
     /// `burn_begin`, sign and `burn_end` in one call.
     pub async fn burn_signed(
         &self,
         req: BurnBeginReq,
-        mnemonic: Zeroizing<String>,
     ) -> Result<wallet::OperationResult, rgb_lib::Error> {
-        self.check_mnemonic(&mnemonic).await?;
-        let before = self.max_batch_idx().await?;
-        let psbt = self.burn_begin(req).await?;
-        match self.sign(mnemonic, psbt).await {
-            Ok(signed) => self.burn_end(signed).await,
-            Err(err) => {
-                self.release_started(before).await;
-                Err(err)
-            }
-        }
+        let (resp, recv) = oneshot::channel();
+        self.send_cmd(WalletCmd::BurnSigned { req, resp }, recv)
+            .await
+    }
+
+    /// `inflate_begin`, sign and `inflate_end` in one call.
+    pub async fn inflate_signed(
+        &self,
+        req: InflateBeginReq,
+    ) -> Result<wallet::OperationResult, rgb_lib::Error> {
+        let (resp, recv) = oneshot::channel();
+        self.send_cmd(WalletCmd::InflateSigned { req, resp }, recv)
+            .await
+    }
+
+    /// `send_btc_begin`, sign and `send_btc_end` in one call. Returns the TXID.
+    pub async fn send_btc_signed(&self, req: SendBtcReq) -> Result<String, rgb_lib::Error> {
+        let (resp, recv) = oneshot::channel();
+        self.send_cmd(WalletCmd::SendBtcSigned { req, resp }, recv)
+            .await
+    }
+
+    /// `create_utxos_begin`, sign and `create_utxos_end` in one call.
+    pub async fn create_utxos_signed(&self, req: CreateUtxoBeginReq) -> Result<u8, rgb_lib::Error> {
+        let (resp, recv) = oneshot::channel();
+        self.send_cmd(WalletCmd::CreateUtxosSigned { req, resp }, recv)
+            .await
     }
 }
 
