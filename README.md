@@ -32,6 +32,15 @@ docker buildx build --load \
 
 The token is available only during the Cargo build and is not stored in the image.
 
+CI builds two images from the same Dockerfile:
+
+| Image tag | Build | Use |
+|-----------|-------|-----|
+| `ghcr.io/utexo-protocol/rgb-node-api:<tag>` | read-only (default) | watch-only wallets, clients sign |
+| `ghcr.io/utexo-protocol/rgb-node-api:<tag>-full` | `--features server-signing` | full wallets, the node signs (private deployments only) |
+
+For a local full-wallet image, add `--build-arg FEATURES=server-signing`.
+
 ### Configuration
 
 ```toml
@@ -53,6 +62,14 @@ proxy_address = ["rpc://127.0.0.1:3000/json-rpc"]
 # eth_chain_id = 11155111
 # eth_min_mint_lock_blocks = 2
 # eth_max_mint_lock_blocks = 1000
+# Optional, PRIVATE DEPLOYMENTS ONLY. Needs a build with
+# `cargo build --features server-signing` (not in the default build).
+# The node can then keep a wallet's keys in memory (POST /wallet/init) and sign
+# for it: /send, /burn, /inflate, /sendbtc and /createutxos. The seed phrase
+# reaches the server, so keep the API on a private network (or behind TLS) and
+# never expose it publicly. Callers must send the token in `x-signing-token`.
+# allow_server_signing = true
+# server_signing_token = "at-least-16-random-characters"
 ```
 
 For BFA, all four `eth_*` fields are required. Choose the mint lock bounds for
@@ -75,6 +92,8 @@ Swagger UI is available at `/_swagger`; the OpenAPI specification is at
 |--------|------|-------------|
 | GET | `/healthcheck` | Service liveness check |
 | GET | `/version` | App version info |
+| GET | `/_swagger` | Swagger UI |
+| GET | `/_swagger/swagger.yaml` | OpenAPI specification |
 
 ### Node/SDK API (`/wallet/`)
 
@@ -98,7 +117,7 @@ The begin/end pattern allows clients to sign PSBTs externally:
 | POST | `/assetbalance` | Get balance for an asset |
 | POST | `/listunspents` | List unspent outputs |
 | POST | `/listtransactions` | List BTC transactions |
-| POST | `/listtransfers` | List RGB transfers for an asset |
+| POST | `/listtransfers` | List RGB transfers; optional `asset_id` and `batch_transfer_idx` filters |
 | POST | `/blindreceive` | Generate RGB invoice (blinded UTXO) |
 | POST | `/witnessreceive` | Generate RGB invoice paid to a new output of the sender's transaction |
 | POST | `/issueassetnia` | Issue new NIA token |
@@ -122,6 +141,29 @@ The begin/end pattern allows clients to sign PSBTs externally:
 | POST | `/failtransfers` | Mark transfers as failed |
 | POST | `/refresh` | Force wallet sync |
 | POST | `/drop` | Remove wallet from memory |
+
+### Full-wallet build (`--features server-signing`)
+
+Private deployments only. The node keeps the keys of a wallet in memory and
+signs for it, so a client (for example an exchange) does not run the begin/end
+round trip. The three wallet headers stay the same. These routes need the
+`x-signing-token` header, are off unless `allow_server_signing = true`, and
+return 404 in a normal build.
+
+The seed is **not stored**. After a restart, call `/init` again with the same
+mnemonic. `/init` replaces a watch-only wallet with the same fingerprint.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/init` | Make a full wallet (`{mnemonic?}`): restores it, or makes new keys. Returns the keys and the header values |
+| POST | `/send` | Send RGB in one call (body of `/sendbegin`) |
+| POST | `/burn` | Burn in one call (body of `/burnbegin`) |
+| POST | `/inflate` | Inflate an IFA asset in one call (body of `/inflatebegin`) |
+| POST | `/sendbtc` | Send BTC in one call (body of `/sendbtcbegin`) |
+| POST | `/createutxos` | Create UTXOs in one call (body of `/createutxosbegin`) |
+
+All routes are under `/wallet/`. On a watch-only wallet they return an error;
+use the begin/end routes there.
 
 A root-level `POST /blindreceive` is also registered as a legacy alias for
 `POST /wallet/blindreceive`. It is marked for removal in the source and should

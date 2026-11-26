@@ -145,7 +145,9 @@ pub fn classify(err: &Error) -> ErrorClass {
         | Error::UnsupportedLink { .. }
         | Error::UnsupportedMint { .. }
         | Error::UnsupportedSchema { .. }
-        | Error::UnsupportedWalletManifestVersion { .. } => ErrorClass::Unsupported,
+        | Error::UnsupportedWalletManifestVersion { .. }
+        // A watch-only wallet cannot sign: use the begin/end routes.
+        | Error::WatchOnly => ErrorClass::Unsupported,
 
         // -- a dependency is down or unreachable -----------------------------
         Error::CannotEstimateFees
@@ -181,10 +183,7 @@ pub fn classify(err: &Error) -> ErrorClass {
         | Error::InvalidEvmRpcUrl { .. }
         | Error::InvalidEvmChain { .. }
         | Error::InvalidProxyAuthKey { .. }
-        | Error::InvalidProxyAuthSignature
-        // The node keeps watch-only wallets on purpose (signing happens in the
-        // client), so hitting a signing-only path is a bug on our side.
-        | Error::WatchOnly => ErrorClass::Internal,
+        | Error::InvalidProxyAuthSignature => ErrorClass::Internal,
 
         // -- everything else is invalid request data -------------------------
         Error::BitcoinNetworkMismatch

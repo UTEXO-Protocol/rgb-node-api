@@ -34,6 +34,8 @@ fn indexer_config(config: &Config) -> Result<IndexerConfig, rgb_lib::Error> {
 pub struct RgbWalletState {
     pub id: String,
     pub master_xpub: String,
+    /// True for wallets without private keys (`/wallet/register`).
+    pub read_only: bool,
     pub wallet: Wallet,
     pub wallet_online: Online,
 
@@ -50,10 +52,56 @@ impl RgbWalletState {
         master_fingerprint: String,
         max_allocations_per_utxo: Option<u32>,
     ) -> Result<Self, rgb_lib::Error> {
+        Self::build(
+            config,
+            SinglesigKeys {
+                account_xpub_colored: xpub_colored,
+                account_xpub_vanilla: xpub_vanilla,
+                mnemonic: None,
+                master_fingerprint,
+                vanilla_keychain: None,
+                witness_version: Default::default(),
+            },
+            Default::default(),
+            max_allocations_per_utxo,
+        )
+    }
+
+    /// A wallet that holds its own keys and signs inside the node. The
+    /// mnemonic is restored when given, made when not. The mnemonic lives in
+    /// memory only: after a restart the caller must make this call again.
+    #[cfg(feature = "server-signing")]
+    pub fn new_full_wallet(
+        config: &Config,
+        keys: rgb_lib::keys::Keys,
+    ) -> Result<Self, rgb_lib::Error> {
+        Self::build(
+            config,
+            SinglesigKeys {
+                account_xpub_colored: keys.account_xpub_colored,
+                account_xpub_vanilla: keys.account_xpub_vanilla,
+                mnemonic: Some(keys.mnemonic),
+                master_fingerprint: keys.master_fingerprint,
+                vanilla_keychain: None,
+                witness_version: Default::default(),
+            },
+            keys.xpub,
+            None,
+        )
+    }
+
+    fn build(
+        config: &Config,
+        keys: SinglesigKeys,
+        master_xpub: String,
+        max_allocations_per_utxo: Option<u32>,
+    ) -> Result<Self, rgb_lib::Error> {
         let data_dir = config.datadir();
 
         std::fs::create_dir_all(&data_dir)?;
 
+        let read_only = keys.mnemonic.is_none();
+        let master_fingerprint = keys.master_fingerprint.clone();
         let mut wallet = Wallet::new(
             WalletData {
                 data_dir,
@@ -63,14 +111,7 @@ impl RgbWalletState {
                 supported_schemas: config.supported_schemas()?,
                 allow_reckless_schemas: false,
             },
-            SinglesigKeys {
-                account_xpub_colored: xpub_colored,
-                account_xpub_vanilla: xpub_vanilla,
-                mnemonic: None,
-                master_fingerprint: master_fingerprint.clone(),
-                vanilla_keychain: None,
-                witness_version: Default::default(),
-            },
+            keys,
         )?;
 
         let online = wallet.go_online(OnlineOptions {
@@ -88,9 +129,10 @@ impl RgbWalletState {
             id: master_fingerprint,
             wallet,
             wallet_online: online,
+            read_only,
             proxy_host: config.proxy_address.iter().cloned().collect(),
             sender_proxy: config.proxy_address.first().cloned(),
-            master_xpub: Default::default(),
+            master_xpub,
         })
     }
 

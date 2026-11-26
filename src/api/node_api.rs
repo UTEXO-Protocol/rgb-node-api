@@ -17,28 +17,14 @@ pub struct XWalletKey {
     master_fingerprint: String,
 }
 
-impl FromRequest for XWalletKey {
-    type Error = actix_web::Error;
-    type Future = Ready<Result<Self, Self::Error>>;
-
-    fn from_request(
-        req: &actix_web::HttpRequest,
-        _payload: &mut actix_web::dev::Payload,
-    ) -> Self::Future {
-        let xpub_van = req
-            .headers()
-            .get(HEADER_XPUB_VAN)
-            .and_then(|v| v.to_str().ok());
-        let xpub_col = req
-            .headers()
-            .get(HEADER_XPUB_COL)
-            .and_then(|v| v.to_str().ok());
-        let mf = req
-            .headers()
-            .get(HEADER_MASTER_FINGERPRINT)
-            .and_then(|v| v.to_str().ok());
-
-        let v = match (xpub_col, xpub_van, mf) {
+impl XWalletKey {
+    fn from_headers(req: &actix_web::HttpRequest) -> Result<Self, ApiError> {
+        let header = |name: &str| req.headers().get(name).and_then(|v| v.to_str().ok());
+        match (
+            header(HEADER_XPUB_COL),
+            header(HEADER_XPUB_VAN),
+            header(HEADER_MASTER_FINGERPRINT),
+        ) {
             (Some(col), Some(van), Some(mf)) => Ok(XWalletKey {
                 xpub_col: col.to_string(),
                 xpub_van: van.to_string(),
@@ -49,11 +35,20 @@ impl FromRequest for XWalletKey {
                 StatusCode::UNAUTHORIZED,
                 ApiErrorCode::AccessDenied,
                 "missing xpub-van/xpub-col/master-fingerprint header",
-            )
-            .into()),
-        };
+            )),
+        }
+    }
+}
 
-        ready(v)
+impl FromRequest for XWalletKey {
+    type Error = actix_web::Error;
+    type Future = Ready<Result<Self, Self::Error>>;
+
+    fn from_request(
+        req: &actix_web::HttpRequest,
+        _payload: &mut actix_web::dev::Payload,
+    ) -> Self::Future {
+        ready(Self::from_headers(req).map_err(Into::into))
     }
 }
 
@@ -119,6 +114,51 @@ pub async fn decode_invoice(
     Ok(Json(invoice.invoice_data()))
 }
 
+#[cfg(feature = "server-signing")]
+const HEADER_SIGNING_TOKEN: &str = "x-signing-token";
+
+#[cfg(feature = "server-signing")]
+/// The routes that keep keys and sign in the node are for private deployments:
+/// they need the switch on and the shared secret in `x-signing-token`.
+fn check_server_signing(
+    ctx: &WalletCtx,
+    headers: &actix_web::http::header::HeaderMap,
+) -> Result<(), ApiError> {
+    if !ctx.server_signing_enabled() {
+        return Err(error_with(
+            StatusCode::FORBIDDEN,
+            ApiErrorCode::AccessDenied,
+            "server-side signing is disabled (set allow_server_signing)",
+        ));
+    }
+    let token = headers
+        .get(HEADER_SIGNING_TOKEN)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default();
+    if !ctx.signing_token_matches(token) {
+        return Err(error_with(
+            StatusCode::UNAUTHORIZED,
+            ApiErrorCode::AccessDenied,
+            "missing or wrong x-signing-token header",
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(feature = "server-signing")]
+/// Runs before the other extractors, so a refused caller never makes the
+/// server read a body or look at the wallet headers.
+pub async fn signing_gate(
+    req: actix_web::dev::ServiceRequest,
+    next: actix_web::middleware::Next<impl actix_web::body::MessageBody + 'static>,
+) -> Result<actix_web::dev::ServiceResponse<impl actix_web::body::MessageBody>, actix_web::Error> {
+    let ctx = req
+        .app_data::<Data<WalletCtx>>()
+        .ok_or_else(|| actix_web::error::ErrorInternalServerError("no wallet context"))?;
+    check_server_signing(ctx, req.headers())?;
+    next.call(req).await
+}
+
 #[derive(serde::Serialize)]
 pub struct RegisterRes {
     pub address: String,
@@ -135,6 +175,19 @@ pub struct AssetBalanceReq {
     /// `assetId` is the pre-unification spelling, accepted for compatibility.
     #[serde(alias = "assetId")]
     pub asset_id: String,
+}
+
+/// Both filters are optional. With neither, every transfer is listed. With
+/// both, a transfer must match both. Unknown fields are an error, so a typo
+/// does not silently list everything.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ListTransfersReq {
+    #[serde(default)]
+    pub asset_id: Option<String>,
+    /// Only the transfers of this batch transfer.
+    #[serde(default)]
+    pub batch_transfer_idx: Option<i32>,
 }
 
 #[derive(serde::Deserialize)]
@@ -265,12 +318,12 @@ pub async fn list_assets(
 pub async fn list_transfers(
     ctx: Data<WalletCtx>,
     wallet_key: XWalletKey,
-    req: Json<AssetId>,
+    req: Json<ListTransfersReq>,
 ) -> Result<Json<Vec<rgb_lib::wallet::Transfer>>, ApiError> {
     let ctx = derive_wctx(&ctx, wallet_key).await?;
 
     let list = ctx
-        .transfers_by_asset(&req.asset_id)
+        .transfers_filtered(req.asset_id.clone(), req.batch_transfer_idx)
         .await
         .map_err(map_rgb_error)?;
     Ok(Json(list))
@@ -478,6 +531,120 @@ pub async fn burn_end(
     Ok(Json(SendResult {
         txid: res.txid,
         batch_transfer_idx: res.batch_transfer_idx,
+    }))
+}
+
+#[cfg(feature = "server-signing")]
+/// Body of `/wallet/init`. The mnemonic is optional: without it the node makes one.
+#[derive(serde::Deserialize, Default)]
+struct InitReq {
+    #[serde(default)]
+    mnemonic: Option<String>,
+}
+
+#[cfg(feature = "server-signing")]
+/// Make a wallet that keeps its keys in the node's memory and signs there.
+/// With `mnemonic` it restores that wallet (call it again after a restart),
+/// without one it makes new keys. The response holds the mnemonic and the three
+/// values for the `xpub-van`, `xpub-col` and `master-fingerprint` headers.
+pub async fn init(
+    ctx: Data<WalletCtx>,
+    body: actix_web::web::Bytes,
+) -> Result<actix_web::HttpResponse, ApiError> {
+    // No body at all means "make new keys". A body that does not parse is an
+    // error, never a silent switch to new keys.
+    let req: InitReq = if body.iter().all(u8::is_ascii_whitespace) {
+        InitReq::default()
+    } else {
+        serde_json::from_slice(&body).map_err(|_| {
+            error_with(
+                StatusCode::BAD_REQUEST,
+                ApiErrorCode::BadInput,
+                "body must be a JSON object with an optional string field: mnemonic",
+            )
+        })?
+    };
+    let keys = ctx
+        .init_full_wallet(req.mnemonic)
+        .await
+        .map_err(map_rgb_error)?;
+    // The body holds a mnemonic: no cache may keep it.
+    Ok(actix_web::HttpResponse::Ok()
+        .insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
+        .json(keys))
+}
+
+#[cfg(feature = "server-signing")]
+/// Send assets in one call: begin, sign inside the node, end.
+pub async fn send(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+    req: Json<SendBeginReq>,
+) -> Result<Json<SendResult>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    let res = ctx.send_signed(req.0).await.map_err(map_rgb_error)?;
+    Ok(Json(SendResult {
+        txid: res.txid,
+        batch_transfer_idx: res.batch_transfer_idx,
+    }))
+}
+
+#[cfg(feature = "server-signing")]
+/// Burn assets in one call: begin, sign inside the node, end.
+pub async fn burn(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+    req: Json<BurnBeginReq>,
+) -> Result<Json<SendResult>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    let res = ctx.burn_signed(req.0).await.map_err(map_rgb_error)?;
+    Ok(Json(SendResult {
+        txid: res.txid,
+        batch_transfer_idx: res.batch_transfer_idx,
+    }))
+}
+
+#[cfg(feature = "server-signing")]
+/// Inflate an IFA asset in one call: begin, sign inside the node, end.
+pub async fn inflate(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+    req: Json<InflateBeginReq>,
+) -> Result<Json<SendResult>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    let res = ctx.inflate_signed(req.0).await.map_err(map_rgb_error)?;
+    Ok(Json(SendResult {
+        txid: res.txid,
+        batch_transfer_idx: res.batch_transfer_idx,
+    }))
+}
+
+#[cfg(feature = "server-signing")]
+/// Send BTC in one call: begin, sign inside the node, end.
+pub async fn send_btc(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+    req: Json<SendBtcReq>,
+) -> Result<Json<SendBtcRes>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    let txid = ctx.send_btc_signed(req.0).await.map_err(map_rgb_error)?;
+    Ok(Json(SendBtcRes { txid }))
+}
+
+#[cfg(feature = "server-signing")]
+/// Create UTXOs in one call: begin, sign inside the node, end.
+pub async fn create_utxos(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+    req: Json<CreateUtxoBeginReq>,
+) -> Result<Json<CreateUtxosRes>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    let created = ctx
+        .create_utxos_signed(req.0)
+        .await
+        .map_err(map_rgb_error)?;
+    Ok(Json(CreateUtxosRes {
+        created: usize::from(created),
     }))
 }
 

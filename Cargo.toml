@@ -18,7 +18,7 @@ rgb-lib = { git = "https://github.com/UTEXO-Protocol/rgb-lib-bfa", tag = "v0.3.0
 actix = "0.13.5"
 actix-cors = "0.7.0"
 actix-files = "0.6.10"
-actix-web = "4.5.1"
+actix-web = "4.9"
 actix-web-prom = { version = "0.9.0", features = ["process"] }
 anyhow = "1.0.81"
 bigdecimal = { version = "0.4.5", features = ["serde", "serde-json"] }
@@ -37,6 +37,7 @@ rust-embed = { version = "8.3.0", features = [
 ] }
 sentry-actix = "0.34.0"
 serde = { version = "1.0.197", features = ["derive"] }
+serde_json = "1.0"
 serde_valid = { version = "1.0.5", features = ["toml"] }
 tokio = { version = "1.43.0", default-features = false, features = ["full"] }
 tokio-util = { version = "0.7.10", default-features = false, features = [
@@ -44,9 +45,11 @@ tokio-util = { version = "0.7.10", default-features = false, features = [
 ] }
 toml = "0.9.6"
 
-[dev-dependencies]
-# pins the wire format of the response models in tests
-serde_json = "1.0"
+[features]
+default = []
+# Full wallets: keys stay in the node and it signs. /wallet/init, /send, /burn,
+# /inflate, /sendbtc and /createutxos. Private deployments only.
+server-signing = []
 
 [patch.crates-io]
 rgb-aluvm = { git = "https://github.com/rgb-protocol/rgb-aluvm", rev = "eb956ccaadf64930990e2ed08f6c4232caee24f9" }

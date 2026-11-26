@@ -31,6 +31,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Optional full-wallet mode for private deployments, in a separate build
+  (`--features server-signing`). It is off unless `allow_server_signing = true`
+  and `server_signing_token` (16+ characters) is set. `POST /wallet/init` makes
+  or restores a wallet whose keys stay in the node's memory. `/wallet/send`,
+  `/burn`, `/inflate`, `/sendbtc` and `/createutxos` then begin, sign and end in
+  one call, with the same bodies as the begin routes. The seed is not stored:
+  call `/wallet/init` again with the same mnemonic after a restart. The token is
+  checked before any body is read and never logged.
+- `/wallet/listtransfers` takes optional `asset_id` and `batch_transfer_idx`. Unknown
+  fields are rejected.
 - `/wallet/decodeinvoice` decodes an RGB invoice without wallet headers.
 - `/wallet/getreceivedmint` returns checked mint details, including the EVM lock ID.
 - `/wallet/issueassetbfa`, `/wallet/mintbegin` and `/wallet/mintend` expose BFA issuance

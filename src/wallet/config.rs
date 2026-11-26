@@ -4,6 +4,23 @@ use serde_valid::toml::FromTomlStr;
 use std::collections::HashMap;
 use std::path::Path;
 
+/// A secret that prints as `<redacted>`, so it cannot reach a log by accident.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(transparent)]
+pub struct SecretString(pub String);
+
+impl std::fmt::Debug for SecretString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("<redacted>")
+    }
+}
+
+impl From<&str> for SecretString {
+    fn from(s: &str) -> Self {
+        Self(s.to_owned())
+    }
+}
+
 #[derive(Serialize, Deserialize, Default, Clone, Debug, serde_valid::Validate)]
 pub struct Config {
     pub alias: Option<String>,
@@ -24,9 +41,45 @@ pub struct Config {
     pub eth_max_mint_lock_blocks: Option<u64>,
     #[serde(default)]
     pub bfa_enabled: bool,
+    /// Allow full wallets: `/wallet/init` keeps the keys in the node's memory
+    /// and `/wallet/send`, `/burn`, `/inflate`, `/sendbtc` and `/createutxos`
+    /// sign inside the node. Off by default. Needs a build with the
+    /// `server-signing` feature.
+    #[serde(default)]
+    pub allow_server_signing: bool,
+    /// Shared secret that callers of those routes send in the
+    /// `x-signing-token` header. Required (16+ characters) when
+    /// `allow_server_signing` is set.
+    #[serde(default)]
+    pub server_signing_token: Option<SecretString>,
 }
 
 impl Config {
+    /// Check the server-signing settings. Call once at startup.
+    pub fn check_server_signing(&self) -> Result<(), String> {
+        if !self.allow_server_signing {
+            return Ok(());
+        }
+        match self.server_signing_token.as_ref().map(|t| t.0.as_str()) {
+            Some(t) if t.len() >= 16 => Ok(()),
+            _ => Err("allow_server_signing needs server_signing_token (16+ characters)".into()),
+        }
+    }
+
+    /// True when `token` is the configured signing token.
+    pub fn signing_token_matches(&self, token: &str) -> bool {
+        let Some(expected) = self.server_signing_token.as_ref().map(|t| t.0.as_str()) else {
+            return false;
+        };
+        // Constant time: compare every byte, whatever the first difference.
+        let (a, b) = (expected.as_bytes(), token.as_bytes());
+        let mut diff = a.len() ^ b.len();
+        for (i, x) in a.iter().enumerate() {
+            diff |= usize::from(x ^ b.get(i).copied().unwrap_or(0));
+        }
+        diff == 0
+    }
+
     pub fn supported_schemas(&self) -> Result<Vec<AssetSchema>, rgb_lib::Error> {
         let mut schemas = vec![AssetSchema::Nia];
         if self.bfa_enabled {
@@ -116,6 +169,40 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn signing_token_check() {
+        let cfg = Config {
+            allow_server_signing: true,
+            server_signing_token: Some("0123456789abcdef".into()),
+            ..Config::default()
+        };
+        assert!(cfg.signing_token_matches("0123456789abcdef"));
+        assert!(!cfg.signing_token_matches("0123456789abcdeX"));
+        assert!(!cfg.signing_token_matches("0123456789abcde"));
+        assert!(!cfg.signing_token_matches(""));
+        assert!(Config::default().check_server_signing().is_ok());
+        let no_token = Config {
+            allow_server_signing: true,
+            ..Config::default()
+        };
+        assert!(no_token.check_server_signing().is_err());
+        let short = Config {
+            allow_server_signing: true,
+            server_signing_token: Some("short".into()),
+            ..Config::default()
+        };
+        assert!(short.check_server_signing().is_err());
+    }
+
+    #[test]
+    fn token_is_redacted_in_debug() {
+        let cfg = Config {
+            server_signing_token: Some("0123456789abcdef".into()),
+            ..Config::default()
+        };
+        assert!(!format!("{cfg:?}").contains("0123456789abcdef"));
+    }
 
     #[test]
     fn bfa_is_explicit_and_requires_an_rpc() {
