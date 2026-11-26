@@ -85,6 +85,10 @@ The begin/end pattern allows clients to sign PSBTs externally:
 2. Sign the PSBT client-side
 3. Call `*end` with the signed PSBT to broadcast
 
+`/createutxosbegin` and `/sendbtcbegin` reserve the inputs of their PSBT until
+the matching `*end` call. To free them without that call, get the TXID from
+`/listpendingvanillatxs` and pass it to `/abortpendingvanillatx`.
+
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/register` | Register a read-only wallet |
@@ -114,6 +118,8 @@ The begin/end pattern allows clients to sign PSBTs externally:
 | POST | `/createutxosend` | Finalize UTXO creation (signed PSBT) |
 | POST | `/sendbtcbegin` | Send BTC (unsigned PSBT) |
 | POST | `/sendbtcend` | Finalize BTC send (signed PSBT) |
+| POST | `/listpendingvanillatxs` | List begun BTC transactions that reserve inputs |
+| POST | `/abortpendingvanillatx` | Abort a begun BTC transaction and free its inputs |
 | POST | `/sendbegin` | Send RGB token (unsigned PSBT) |
 | POST | `/sendend` | Finalize token send (signed PSBT) |
 | POST | `/burnbegin` | Burn BFA or IFA tokens (unsigned PSBT) |

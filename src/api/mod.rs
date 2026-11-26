@@ -83,6 +83,14 @@ impl ApiService for WalletSrv {
                     )
                     .service(resource("/sendbtcbegin").route(post().to(node_api::send_btc_begin)))
                     .service(resource("/sendbtcend").route(post().to(node_api::send_btc_end)))
+                    .service(
+                        resource("/listpendingvanillatxs")
+                            .route(post().to(node_api::list_pending_vanilla_txs)),
+                    )
+                    .service(
+                        resource("/abortpendingvanillatx")
+                            .route(post().to(node_api::abort_pending_vanilla_tx)),
+                    )
                     .service(resource("/failtransfers").route(post().to(node_api::fail_transfers)))
                     .service(
                         resource("/listtransactions").route(post().to(node_api::list_transactions)),
@@ -264,6 +272,11 @@ mod tests {
                 "signed_psbt",
                 json!({"signed_psbt": "unused"}),
             ),
+            (
+                "/wallet/abortpendingvanillatx",
+                "txid",
+                json!({"txid": "unused"}),
+            ),
         ] {
             for missing in headers {
                 let mut req = test::TestRequest::post().uri(path);
@@ -288,6 +301,26 @@ mod tests {
                 assert_eq!(body["error"]["code"], 1001);
             }
         }
+        ctx.stop().await.unwrap();
+        tasks.close();
+        tasks.wait().await;
+    }
+
+    #[actix_web::test]
+    async fn list_pending_vanilla_txs_requires_headers() {
+        let tasks = TaskTracker::new();
+        let ctx = WalletCtx::new(Config::default(), &tasks);
+        let app =
+            test::init_service(App::new().service(WalletSrv { ctx: ctx.clone() }.service())).await;
+        let req = test::TestRequest::post()
+            .uri("/wallet/listpendingvanillatxs")
+            .insert_header(("xpub-van", "unused"))
+            .insert_header(("xpub-col", "unused"))
+            .to_request();
+        let res = test::call_service(&app, req).await;
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+        let body: Value = test::read_body_json(res).await;
+        assert_eq!(body["error"]["code"], 401);
         ctx.stop().await.unwrap();
         tasks.close();
         tasks.wait().await;

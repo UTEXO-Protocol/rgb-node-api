@@ -332,6 +332,20 @@ impl WalletCtx {
         self.send_cmd(cmd, recv).await
     }
 
+    pub async fn pending_vanilla_txs(
+        &self,
+    ) -> Result<Vec<wallet::PendingVanillaTx>, rgb_lib::Error> {
+        let (resp, recv) = oneshot::channel();
+        let cmd = WalletCmd::ListPendingVanillaTxs { resp };
+        self.send_cmd(cmd, recv).await
+    }
+
+    pub async fn abort_pending_vanilla_tx(&self, txid: String) -> Result<(), rgb_lib::Error> {
+        let (resp, recv) = oneshot::channel();
+        let cmd = WalletCmd::AbortPendingVanillaTx { txid, resp };
+        self.send_cmd(cmd, recv).await
+    }
+
     pub async fn send_begin(&self, req: SendBeginReq) -> Result<String, rgb_lib::Error> {
         req.expiration()?;
         let (resp, recv) = oneshot::channel();
