@@ -211,6 +211,12 @@ pub struct FailTransfer {
     pub skip_sync: bool,
 }
 
+#[derive(serde::Deserialize)]
+pub struct AbortPendingVanillaTx {
+    /// TXID of a transaction that `/wallet/listpendingvanillatxs` returns.
+    pub txid: String,
+}
+
 #[derive(serde::Serialize)]
 pub struct SendResult {
     pub txid: String,
@@ -740,6 +746,27 @@ pub async fn send_btc_end(
     Ok(Json(SendBtcRes { txid }))
 }
 
+pub async fn list_pending_vanilla_txs(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+) -> Result<Json<Vec<rgb_lib::wallet::PendingVanillaTx>>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    let list = ctx.pending_vanilla_txs().await.map_err(map_rgb_error)?;
+    Ok(Json(list))
+}
+
+pub async fn abort_pending_vanilla_tx(
+    ctx: Data<WalletCtx>,
+    wallet_key: XWalletKey,
+    req: Json<AbortPendingVanillaTx>,
+) -> Result<Json<EmptyRes>, ApiError> {
+    let ctx = derive_wctx(&ctx, wallet_key).await?;
+    ctx.abort_pending_vanilla_tx(req.0.txid)
+        .await
+        .map_err(map_rgb_error)?;
+    Ok(Json(EmptyRes {}))
+}
+
 pub async fn refresh(
     ctx: Data<WalletCtx>,
     wallet_key: XWalletKey,
@@ -813,6 +840,18 @@ mod tests {
                 r#"{}"#,
                 r#"{"mint":null}"#,
             ]
+        );
+    }
+
+    #[test]
+    fn aborting_a_tx_without_reservations_is_a_conflict() {
+        let err = map_rgb_error(rgb_lib::Error::CannotAbortPendingVanillaTx);
+
+        assert_eq!(err.http_code, StatusCode::CONFLICT);
+        assert_eq!(err.code, ApiErrorCode::Conflict as u16);
+        assert_eq!(
+            err.details.get("kind").map(String::as_str),
+            Some("CannotAbortPendingVanillaTx")
         );
     }
 

@@ -191,6 +191,13 @@ pub(crate) enum WalletCmd {
         psbt: String,
         resp: ResultChan<String>,
     },
+    ListPendingVanillaTxs {
+        resp: ResultChan<Vec<wallet::PendingVanillaTx>>,
+    },
+    AbortPendingVanillaTx {
+        txid: String,
+        resp: ResultChan<()>,
+    },
     AddReadOnlyWallet {
         xpub_colored: String,
         xpub_vanilla: String,
@@ -240,6 +247,8 @@ impl std::fmt::Display for WalletCmd {
             WalletCmd::GetConsignment { .. } => "GetConsignment",
             WalletCmd::SendBtcBegin { .. } => "SendBtcBegin",
             WalletCmd::SendBtcEnd { .. } => "SendBtcEnd",
+            WalletCmd::ListPendingVanillaTxs { .. } => "ListPendingVanillaTxs",
+            WalletCmd::AbortPendingVanillaTx { .. } => "AbortPendingVanillaTx",
             WalletCmd::AddReadOnlyWallet { .. } => "AddReadOnlyWallet",
             #[cfg(feature = "server-signing")]
             WalletCmd::AddFullWallet { .. } => "AddFullWallet",
@@ -932,6 +941,41 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                 Ok(val) => resp.send(Ok(val)).is_ok(),
                 Err(err) => {
                     log_rgb_err!(err, "send btc end: wid={id} error={:?}", err);
+                    resp.send(Err(err)).is_ok()
+                }
+            }
+        }
+        WalletCmd::ListPendingVanillaTxs { resp } => {
+            match wallet_state
+                .lock()
+                .unwrap()
+                .wallet
+                .list_pending_vanilla_txs()
+            {
+                Ok(val) => resp.send(Ok(val)).is_ok(),
+                Err(err) => {
+                    log_rgb_err!(err, "list pending vanilla txs: wid={id} error={:?}", err);
+                    resp.send(Err(err)).is_ok()
+                }
+            }
+        }
+        WalletCmd::AbortPendingVanillaTx { txid, resp } => {
+            match wallet_state
+                .lock()
+                .unwrap()
+                .wallet
+                .abort_pending_vanilla_tx(txid.clone())
+            {
+                Ok(()) => {
+                    log::info!("aborted pending vanilla tx: wid={id} txid={txid}");
+                    resp.send(Ok(())).is_ok()
+                }
+                Err(err) => {
+                    log_rgb_err!(
+                        err,
+                        "abort pending vanilla tx: wid={id} txid={txid} error={:?}",
+                        err
+                    );
                     resp.send(Err(err)).is_ok()
                 }
             }

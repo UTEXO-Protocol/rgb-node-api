@@ -1043,6 +1043,115 @@ paths:
           $ref: '#/components/responses/InternalError'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
+  /wallet/listpendingvanillatxs:
+    post:
+      summary: List Pending Vanilla Txs
+      description: >-
+        List the BTC transactions that `/wallet/createutxosbegin` or
+        `/wallet/sendbtcbegin` began and no end call finished. Each one
+        reserves its inputs, and the vanilla `spendable` balance leaves them
+        out, until its end call finishes it or `/wallet/abortpendingvanillatx`
+        aborts it.
+      operationId: list_pending_vanilla_txs_wallet_listpendingvanillatxs_post
+      parameters:
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
+      responses:
+        '200':
+          description: The pending transactions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PendingVanillaTx'
+                title: Response List Pending Vanilla Txs
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /wallet/abortpendingvanillatx:
+    post:
+      summary: Abort Pending Vanilla Tx
+      description: >-
+        Free the inputs that a pending transaction reserves, so that other
+        operations can spend them. Use it when the PSBT of
+        `/wallet/createutxosbegin` or `/wallet/sendbtcbegin` is lost or will
+        not be signed. A signed copy of that PSBT stays valid until one of its
+        inputs is spent.
+      operationId: abort_pending_vanilla_tx_wallet_abortpendingvanillatx_post
+      parameters:
+        - name: xpub-van
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Van
+        - name: xpub-col
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Xpub Col
+        - name: master-fingerprint
+          in: header
+          required: true
+          schema:
+            type: string
+            title: Master Fingerprint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AbortPendingVanillaTxRequestModel'
+      responses:
+        '200':
+          description: The transaction's inputs are free.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: >-
+            The wallet has no pending transaction with this TXID: it is
+            unknown, already aborted or finished. `error.code` is 1009
+            `conflict` and `error.details.kind` is
+            `CannotAbortPendingVanillaTx`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /wallet/burnbegin:
     post:
       summary: Burn Begin
@@ -3378,6 +3487,39 @@ components:
       required:
         - txid
       title: SendBtcResponse
+    AbortPendingVanillaTxRequestModel:
+      properties:
+        txid:
+          type: string
+          title: Txid
+          description: >-
+            TXID of a transaction that `/wallet/listpendingvanillatxs`
+            returns.
+      type: object
+      required:
+        - txid
+      title: AbortPendingVanillaTxRequestModel
+    PendingVanillaTx:
+      properties:
+        txid:
+          type: string
+          title: Txid
+          description: TXID of the unsigned transaction.
+        type:
+          $ref: '#/components/schemas/WalletTransactionType'
+      type: object
+      required:
+        - txid
+        - type
+      title: PendingVanillaTx
+    WalletTransactionType:
+      type: string
+      enum:
+        - CreateUtxos
+        - Drain
+        - SendBtc
+      title: WalletTransactionType
+      description: The operation that began the transaction.
     SendAssetBeginRequestModel:
       properties:
         recipient_map:

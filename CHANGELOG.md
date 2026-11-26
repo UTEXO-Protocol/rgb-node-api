@@ -51,6 +51,10 @@ All notable changes to this project are documented here. The format follows
 - `/wallet/sendbtcbegin` and `/wallet/sendbtcend` send BTC from the wallet's
   vanilla side with a PSBT signed by the client; the end call returns the
   broadcast `txid`.
+- `/wallet/listpendingvanillatxs` lists the transactions begun by
+  `/wallet/createutxosbegin` or `/wallet/sendbtcbegin` whose inputs stay
+  reserved until their end call. `/wallet/abortpendingvanillatx` frees the
+  inputs of one of them by `txid`.
 - `/wallet/witnessreceive` creates an RGB invoice paid to a new output of the
   sender's transaction, so the wallet needs no colorable UTXO up front. It
   takes the same body as `/wallet/blindreceive`.
