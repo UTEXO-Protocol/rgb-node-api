@@ -637,7 +637,7 @@ fn handle_wallet_cmd(wallet_state: Arc<Mutex<RgbWalletState>>, id: String, cmd: 
                 .wallet
                 .get_received_mint(recipient_id)
             {
-                Ok(val) => resp.send(Ok(val)).is_ok(),
+                Ok(val) => resp.send(Ok(val.into_iter().next())).is_ok(),
                 Err(err) => {
                     log_rgb_err!(err, "get received mint: wid={id} error={:?}", err);
                     resp.send(Err(err)).is_ok()

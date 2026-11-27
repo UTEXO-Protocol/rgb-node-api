@@ -268,6 +268,8 @@ fn signing_wallet(mnemonic: &str, network: BitcoinNetwork, data_dir: &PathBuf) -
             data_dir: data_dir.to_string_lossy().into_owned(),
             bitcoin_network: network,
             database_type: DatabaseType::Sqlite,
+            address_reuse_vanilla: false,
+            address_reuse_colored_auto: false,
             max_allocations_per_utxo: MAX_ALLOCATIONS_PER_UTXO,
             supported_schemas: vec![AssetSchema::Nia],
             allow_reckless_schemas: false,
