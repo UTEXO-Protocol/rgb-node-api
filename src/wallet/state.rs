@@ -107,6 +107,8 @@ impl RgbWalletState {
                 data_dir,
                 bitcoin_network: config.net(),
                 database_type: DatabaseType::Sqlite,
+                address_reuse_vanilla: false,
+                address_reuse_colored_auto: false,
                 max_allocations_per_utxo: max_allocations_per_utxo.unwrap_or(5),
                 supported_schemas: config.supported_schemas()?,
                 allow_reckless_schemas: false,
@@ -163,6 +165,7 @@ impl RgbWalletState {
                 transport_endpoints,
                 min_confirmations,
                 None,
+                None,
             )?,
             ReceiveKind::Witness => self.wallet.witness_receive(
                 Some(self.wallet_online),
@@ -171,6 +174,8 @@ impl RgbWalletState {
                 expiration_timestamp,
                 transport_endpoints,
                 min_confirmations,
+                None,
+                None,
                 None,
             )?,
         };

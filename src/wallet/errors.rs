@@ -107,6 +107,7 @@ pub fn classify(err: &Error) -> ErrorClass {
 
         // -- the request clashes with the current state ----------------------
         Error::AllocationsAlreadyAvailable
+        | Error::AssetAlreadyKnown { .. }
         | Error::CannotAbortPendingVanillaTx
         | Error::CannotChangeOnline
         | Error::CannotDeleteBatchTransfer
@@ -114,6 +115,7 @@ pub fn classify(err: &Error) -> ErrorClass {
         | Error::CannotFailBatchTransfer
         | Error::CannotProvideOutOfBandAck { .. }
         | Error::CannotProvideOutOfBandConsignment { .. }
+        | Error::CannotReuseAddress { .. }
         | Error::FileAlreadyExists { .. }
         | Error::InvoiceNotReserved
         | Error::InvoiceQuotaExceeded
@@ -138,6 +140,7 @@ pub fn classify(err: &Error) -> ErrorClass {
         // The asset's bridge lives on an EVM chain this node has no RPC for.
         | Error::NoEvmRpcUrl { .. }
         | Error::NoSupportedSchemas
+        | Error::UnsupportedAddressReuse { .. }
         | Error::UnsupportedBackupVersion { .. }
         | Error::UnsupportedBurn { .. }
         | Error::UnsupportedInflation { .. }
@@ -192,6 +195,7 @@ pub fn classify(err: &Error) -> ErrorClass {
         | Error::ConsignmentValidationFailed { .. }
         | Error::EmptyFile { .. }
         | Error::ExpirationInvalid
+        | Error::FileTooLarge { .. }
         | Error::HashMismatch
         | Error::FingerprintMismatch
         | Error::InvalidAmountZero
@@ -204,6 +208,7 @@ pub fn classify(err: &Error) -> ErrorClass {
         | Error::InvalidBurnReason { .. }
         | Error::InvalidConsignment
         | Error::InvalidContentSignature
+        | Error::InvalidContract { .. }
         | Error::InvalidContractId { .. }
         | Error::InvalidCosigner { .. }
         | Error::InvalidDetails { .. }
@@ -222,6 +227,8 @@ pub fn classify(err: &Error) -> ErrorClass {
         | Error::InvalidName { .. }
         | Error::InvalidPrecision { .. }
         | Error::InvalidPubkey { .. }
+        | Error::InvalidQuota { .. }
+        | Error::InvalidRejectList { .. }
         | Error::InvalidRejectListUrl { .. }
         | Error::InvalidTicker { .. }
         | Error::InvalidTxid
